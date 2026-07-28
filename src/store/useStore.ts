@@ -226,7 +226,31 @@ export function useAppStore() {
   };
 
   const [isMultiBranchEnabled, setIsMultiBranchEnabled] = useState<boolean>(false);
-  const [activeShift, setActiveShift] = useState<Shift | null>(null);
+  const [activeShift, setActiveShiftState] = useState<Shift | null>(() => {
+    try {
+      const saved = localStorage.getItem('minimarket_active_shift_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && String(parsed.status).toUpperCase() === 'OPEN' && !parsed.endTime) return parsed;
+      }
+    } catch (e) {
+      console.warn(e);
+    }
+    return null;
+  });
+
+  const setActiveShift = (shift: Shift | null) => {
+    setActiveShiftState(shift);
+    try {
+      if (shift && String(shift.status).toUpperCase() === 'OPEN' && !shift.endTime) {
+        localStorage.setItem('minimarket_active_shift_v1', JSON.stringify(shift));
+      } else {
+        localStorage.removeItem('minimarket_active_shift_v1');
+      }
+    } catch (e) {
+      console.warn('Error persisting active shift:', e);
+    }
+  };
 
   const saveSession = (
     loggedIn: boolean,
@@ -425,10 +449,21 @@ export function useAppStore() {
   const checkActiveShift = async () => {
     try {
       const openShift = await getActiveShiftServer(activeBranch?.id || 'default-branch-001');
-      setActiveShift(openShift);
+      if (openShift) {
+        setActiveShift(openShift);
+      } else {
+        const saved = localStorage.getItem('minimarket_active_shift_v1');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && String(parsed.status).toUpperCase() === 'OPEN' && !parsed.endTime) {
+            setActiveShift(parsed);
+            return;
+          }
+        }
+        setActiveShift(null);
+      }
     } catch (err) {
       console.warn('Shift check warning:', err);
-      setActiveShift(null);
     }
   };
 

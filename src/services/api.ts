@@ -120,6 +120,11 @@ export async function openShiftServer(cashierId: string, cashierName: string, op
     status: 'OPEN'
   };
 
+  // Persist locally immediately
+  try {
+    localStorage.setItem('minimarket_active_shift_v1', JSON.stringify(newShift));
+  } catch (e) {}
+
   // Sync to Supabase directly
   await syncShiftToCloud(newShift);
 
@@ -136,86 +141,123 @@ export async function openShiftServer(cashierId: string, cashierName: string, op
 }
 
 /**
- * Get Active Open Shift directly from Supabase Cloud
+ * Get Active Open Shift directly from Supabase Cloud with Local Fallback
  */
 export async function getActiveShiftServer(branchId = 'default-branch-001'): Promise<Shift | null> {
-  const shifts = await fetchShiftsFromCloud(branchId);
-  const openShift = shifts.find((s) => s.status === 'OPEN' && !s.endTime);
-  return openShift || null;
+  try {
+    const shifts = await fetchShiftsFromCloud(branchId);
+    const openShift = shifts.find((s) => String(s.status).toUpperCase() === 'OPEN' && !s.endTime);
+    if (openShift) {
+      try {
+        localStorage.setItem('minimarket_active_shift_v1', JSON.stringify(openShift));
+      } catch (e) {}
+      return openShift;
+    }
+  } catch (e) {
+    console.warn('Error checking active shift from cloud:', e);
+  }
+
+  // Fallback to localStorage
+  try {
+    const localActive = localStorage.getItem('minimarket_active_shift_v1');
+    if (localActive) {
+      const parsed = JSON.parse(localActive);
+      if (parsed && String(parsed.status).toUpperCase() === 'OPEN' && !parsed.endTime) {
+        if (!branchId || !parsed.branchId || parsed.branchId === branchId) {
+          return parsed;
+        }
+      }
+    }
+  } catch (e) {}
+
+  return null;
 }
 
 /**
  * Close Shift directly in Supabase Cloud
  */
 export async function closeShiftServer(shiftId: string, actualClosingCash: number, notes?: string): Promise<Shift | null> {
-  const client = getSupabaseClient();
-  if (!client) return null;
-
+  // Clear local active shift
   try {
-    // 1. Fetch shift record
-    const { data: shiftData } = await client.from('shifts').select('*').eq('id', shiftId).maybeSingle();
-    if (!shiftData) return null;
+    localStorage.removeItem('minimarket_active_shift_v1');
+  } catch (e) {}
 
-    const openingCash = Number(shiftData.opening_cash || 0);
+  const client = getSupabaseClient();
+  let shiftData: any = null;
 
-    // 2. Fetch cash transactions for this shift
-    const { data: txsData } = await client
-      .from('transactions')
-      .select('grand_total, payment_method')
-      .eq('shift_id', shiftId);
-
-    const cashSales = (txsData || [])
-      .filter((t: any) => t.payment_method === 'CASH')
-      .reduce((sum: number, t: any) => sum + Number(t.grand_total || 0), 0);
-
-    // 3. Fetch cash movements for this shift
-    const { data: cmData } = await client
-      .from('cash_movements')
-      .select('amount, type')
-      .eq('shift_id', shiftId);
-
-    const totalCashIn = (cmData || [])
-      .filter((m: any) => m.type === 'CASH_IN')
-      .reduce((sum: number, m: any) => sum + Number(m.amount || 0), 0);
-
-    const totalExpenseOut = (cmData || [])
-      .filter((m: any) => m.type === 'EXPENSE_OUT')
-      .reduce((sum: number, m: any) => sum + Number(m.amount || 0), 0);
-
-    const expectedClosingCash = openingCash + cashSales + totalCashIn - totalExpenseOut;
-    const cashDifference = actualClosingCash - expectedClosingCash;
-
-    const closedShift: Shift = {
-      id: shiftData.id,
-      branchId: shiftData.branch_id || 'default-branch-001',
-      cashierId: shiftData.cashier_id || shiftData.user_id || 'user-001',
-      cashierName: shiftData.cashier_name,
-      openingCash,
-      expectedClosingCash,
-      actualClosingCash,
-      cashDifference,
-      startTime: shiftData.start_time,
-      endTime: new Date().toISOString(),
-      status: 'CLOSED',
-      notes: notes || ''
-    };
-
-    await syncShiftToCloud(closedShift);
-
-    await logAudit(
-      'CLOSE_SHIFT',
-      'POS_SHIFT',
-      `Tutup Shift oleh ${closedShift.cashierName}. Kas Fisik: Rp ${actualClosingCash.toLocaleString('id-ID')} | Selisih: Rp ${cashDifference.toLocaleString('id-ID')}`,
-      closedShift.cashierName,
-      closedShift.cashierId,
-      closedShift.branchId
-    );
-
-    return closedShift;
-  } catch (err) {
-    console.error('Failed to close shift in cloud:', err);
-    return null;
+  if (client) {
+    try {
+      const { data } = await client.from('shifts').select('*').eq('id', shiftId).maybeSingle();
+      shiftData = data;
+    } catch (e) {}
   }
+
+  const openingCash = Number(shiftData?.opening_cash || 100000);
+  const cashierName = shiftData?.cashier_name || 'Kasir';
+  const cashierId = shiftData?.cashier_id || shiftData?.user_id || 'user-001';
+  const branchId = shiftData?.branch_id || 'default-branch-001';
+  const startTime = shiftData?.start_time || new Date().toISOString();
+
+  let cashSales = 0;
+  let totalCashIn = 0;
+  let totalExpenseOut = 0;
+
+  if (client) {
+    try {
+      const { data: txsData } = await client
+        .from('transactions')
+        .select('grand_total, payment_method')
+        .eq('shift_id', shiftId);
+
+      cashSales = (txsData || [])
+        .filter((t: any) => t.payment_method === 'CASH')
+        .reduce((sum: number, t: any) => sum + Number(t.grand_total || 0), 0);
+
+      const { data: cmData } = await client
+        .from('cash_movements')
+        .select('amount, type')
+        .eq('shift_id', shiftId);
+
+      totalCashIn = (cmData || [])
+        .filter((m: any) => m.type === 'CASH_IN')
+        .reduce((sum: number, m: any) => sum + Number(m.amount || 0), 0);
+
+      totalExpenseOut = (cmData || [])
+        .filter((m: any) => m.type === 'EXPENSE_OUT')
+        .reduce((sum: number, m: any) => sum + Number(m.amount || 0), 0);
+    } catch (e) {}
+  }
+
+  const expectedClosingCash = openingCash + cashSales + totalCashIn - totalExpenseOut;
+  const cashDifference = actualClosingCash - expectedClosingCash;
+
+  const closedShift: Shift = {
+    id: shiftId,
+    branchId,
+    cashierId,
+    cashierName,
+    openingCash,
+    expectedClosingCash,
+    actualClosingCash,
+    cashDifference,
+    startTime,
+    endTime: new Date().toISOString(),
+    status: 'CLOSED',
+    notes: notes || ''
+  };
+
+  await syncShiftToCloud(closedShift);
+
+  await logAudit(
+    'CLOSE_SHIFT',
+    'POS_SHIFT',
+    `Tutup Shift oleh ${cashierName}. Kas Fisik: Rp ${actualClosingCash.toLocaleString('id-ID')} | Selisih: Rp ${cashDifference.toLocaleString('id-ID')}`,
+    cashierName,
+    cashierId,
+    branchId
+  );
+
+  return closedShift;
 }
 
 /**
