@@ -987,7 +987,7 @@ export async function fetchTransactionsFromCloud(branchId?: string): Promise<Tra
       query = query.or(`branch_id.eq.${branchId},branch_id.is.null`);
     }
     const { data, error } = await query;
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       const cloudTxs: Transaction[] = data.map((d: any) => ({
         id: d.id,
         txUuid: d.tx_uuid || d.id,
@@ -1031,18 +1031,24 @@ export async function fetchTransactionsFromCloud(branchId?: string): Promise<Tra
         })) || []
       }));
 
-      // Combine cloud and local transactions avoiding duplicates
+      // Map cloud transactions and ONLY unsynced local transactions
       const mergedMap = new Map<string, Transaction>();
       cloudTxs.forEach((t) => mergedMap.set(t.id, t));
       localTxs.forEach((t) => {
-        if (!mergedMap.has(t.id)) {
+        if (!t.isSynced && !mergedMap.has(t.id)) {
           mergedMap.set(t.id, t);
         }
       });
 
-      return Array.from(mergedMap.values()).sort(
+      const result = Array.from(mergedMap.values()).sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('minimarket_local_transactions_v1', JSON.stringify(result.slice(0, 500)));
+      }
+
+      return result;
     }
   } catch (err) {
     console.warn('Error fetching transactions from Supabase:', err);
@@ -1162,7 +1168,7 @@ export async function fetchCashMovementsFromCloud(branchId?: string): Promise<Ca
       query = query.or(`branch_id.eq.${branchId},branch_id.is.null`);
     }
     const { data, error } = await query;
-    if (!error && data && data.length > 0) {
+    if (!error && data) {
       const cloudCms: CashMovement[] = data.map((d: any) => ({
         id: d.id,
         branchId: d.branch_id || branchId || 'default-branch-001',
@@ -1175,17 +1181,11 @@ export async function fetchCashMovementsFromCloud(branchId?: string): Promise<Ca
         createdAt: d.created_at || new Date().toISOString()
       }));
 
-      const mergedMap = new Map<string, CashMovement>();
-      cloudCms.forEach((m) => mergedMap.set(m.id, m));
-      localCms.forEach((m) => {
-        if (!mergedMap.has(m.id)) {
-          mergedMap.set(m.id, m);
-        }
-      });
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('minimarket_local_cash_movements_v1', JSON.stringify(cloudCms.slice(0, 500)));
+      }
 
-      return Array.from(mergedMap.values()).sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
+      return cloudCms;
     }
   } catch (err) {
     console.warn('Error fetching cash movements from Supabase:', err);
@@ -1229,6 +1229,11 @@ export function subscribeToCloudRealtime(onDataUpdate: () => void) {
  * Purge Cloud Store Data (Transactions, Shifts, Cash Movements, Audit Logs, PO, Expenses)
  */
 export async function purgeCloudStoreData(): Promise<boolean> {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('minimarket_local_transactions_v1');
+    localStorage.removeItem('minimarket_local_cash_movements_v1');
+    localStorage.removeItem('minimarket_active_shift_v1');
+  }
   if (!supabaseClient) return true;
   try {
     const tablesToPurge = [

@@ -137,6 +137,9 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
     try {
       const result = await purgeAllStoreData(ownerPasswordInput, currentUser);
       if (result.success) {
+        localStorage.removeItem('minimarket_local_transactions_v1');
+        localStorage.removeItem('minimarket_local_cash_movements_v1');
+        localStorage.removeItem('minimarket_active_shift_v1');
         alert(result.message);
         setIsResetModalOpen(false);
         window.location.reload();
@@ -185,6 +188,9 @@ export const SettingsManager: React.FC<SettingsManagerProps> = ({
       localStorage.removeItem('minimarket_branches_v1');
       localStorage.removeItem('minimarket_store_name_v1');
       localStorage.removeItem('minimarket_store_logo_v1');
+      localStorage.removeItem('minimarket_local_transactions_v1');
+      localStorage.removeItem('minimarket_local_cash_movements_v1');
+      localStorage.removeItem('minimarket_active_shift_v1');
 
       const res = await pullCloudDataToLocal();
       
