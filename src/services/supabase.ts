@@ -457,7 +457,9 @@ export async function syncShiftToCloud(shift: Shift): Promise<boolean> {
   if (!supabaseClient) return false;
   try {
     if (shift.branchId) {
-      await ensureBranchInCloud(shift.branchId);
+      try {
+        await ensureBranchInCloud(shift.branchId);
+      } catch (e) {}
     }
 
     const payload: any = {
@@ -485,8 +487,24 @@ export async function syncShiftToCloud(shift: Shift): Promise<boolean> {
     }
 
     if (error) {
-      console.warn('Supabase shift sync warning:', error.message);
-      return false;
+      console.warn('Supabase shift sync initial error, trying clean fallback:', error.message);
+      const cleanPayload: any = {
+        id: shift.id,
+        cashier_name: shift.cashierName,
+        start_time: shift.startTime,
+        end_time: shift.endTime || null,
+        opening_cash: shift.openingCash || 0,
+        actual_closing_cash: shift.actualClosingCash ?? null,
+        expected_closing_cash: shift.expectedClosingCash ?? null,
+        cash_difference: shift.cashDifference ?? null,
+        status: shift.status || (shift.endTime ? 'CLOSED' : 'OPEN'),
+        notes: shift.notes || null
+      };
+      const fallbackRes = await supabaseClient.from('shifts').upsert(cleanPayload, { onConflict: 'id' });
+      if (fallbackRes.error) {
+        console.warn('Supabase shift clean fallback failed:', fallbackRes.error.message);
+        return false;
+      }
     }
     console.log('✓ Shift synced to Supabase Cloud:', shift.id, shift.status);
     return true;
@@ -1043,7 +1061,16 @@ export async function fetchShiftsFromCloud(branchId?: string): Promise<Shift[]> 
     if (branchId) {
       query = query.or(`branch_id.eq.${branchId},branch_id.is.null`);
     }
-    const { data, error } = await query;
+    let { data, error } = await query;
+
+    if (error || !data || data.length === 0) {
+      const fallbackQuery = await supabaseClient.from('shifts').select('*').order('start_time', { ascending: false }).limit(50);
+      if (!fallbackQuery.error && fallbackQuery.data && fallbackQuery.data.length > 0) {
+        data = fallbackQuery.data;
+        error = null;
+      }
+    }
+
     if (!error && data && data.length > 0) {
       return data.map((d: any) => ({
         id: d.id,

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { LogIn } from 'lucide-react';
-import { openShiftServer, logAudit } from '../../services/api';
+import React, { useState, useEffect } from 'react';
+import { LogIn, Loader2 } from 'lucide-react';
+import { openShiftServer, getActiveShiftServer, logAudit } from '../../services/api';
 import { formatCurrency } from '../../utils/formatters';
 
 interface OpenShiftModalProps {
@@ -19,19 +19,43 @@ export const OpenShiftModal: React.FC<OpenShiftModalProps> = ({
   const [cashierName, setCashierName] = useState(currentUser.name);
   const [openingCash, setOpeningCash] = useState<number>(100000); // Default Rp 100.000
   const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const checkActive = async () => {
+      try {
+        const active = await getActiveShiftServer(activeBranch?.id);
+        if (active && isMounted) {
+          setActiveShift(active);
+          onClose();
+        }
+      } catch (e) {}
+    };
+    checkActive();
+    return () => { isMounted = false; };
+  }, [activeBranch?.id]);
 
   const handleOpenShift = async (e: React.FormEvent) => {
     e.preventDefault();
-    const shift = await openShiftServer(currentUser.id, cashierName, openingCash, activeBranch.id);
-    await logAudit(
-      'BUKA_SHIFT',
-      'SHIFT',
-      `Kasir ${cashierName} membuka shift dengan kas awal ${formatCurrency(openingCash)}`,
-      cashierName,
-      currentUser.id
-    );
-    setActiveShift(shift);
-    onClose();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const shift = await openShiftServer(currentUser.id, cashierName, openingCash, activeBranch?.id || 'default-branch-001');
+      await logAudit(
+        'BUKA_SHIFT',
+        'SHIFT',
+        `Kasir ${cashierName} membuka shift dengan kas awal ${formatCurrency(openingCash)}`,
+        cashierName,
+        currentUser.id
+      );
+      setActiveShift(shift);
+      onClose();
+    } catch (e) {
+      console.error('Error opening shift:', e);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -93,9 +117,10 @@ export const OpenShiftModal: React.FC<OpenShiftModalProps> = ({
           </button>
           <button
             type="submit"
-            className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl text-xs shadow-[4px_4px_10px_rgba(16,185,129,0.3)]"
+            disabled={isSubmitting}
+            className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl text-xs shadow-[4px_4px_10px_rgba(16,185,129,0.3)] flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            BUKA SHIFT
+            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'BUKA SHIFT'}
           </button>
         </div>
       </form>

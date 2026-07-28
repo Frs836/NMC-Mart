@@ -110,6 +110,13 @@ export async function triggerBackgroundSyncQueue(): Promise<boolean> {
  * Open Shift directly in Supabase Cloud
  */
 export async function openShiftServer(cashierId: string, cashierName: string, openingCash: number, branchId = 'default-branch-001'): Promise<Shift> {
+  // Prevent double open shift if a shift is already open across devices
+  const existingShift = await getActiveShiftServer(branchId);
+  if (existingShift) {
+    console.log('✓ Found existing active shift, reusing:', existingShift.id);
+    return existingShift;
+  }
+
   const newShift: Shift = {
     id: `shift-${Date.now()}`,
     branchId,
@@ -146,7 +153,13 @@ export async function openShiftServer(cashierId: string, cashierName: string, op
 export async function getActiveShiftServer(branchId = 'default-branch-001'): Promise<Shift | null> {
   try {
     const shifts = await fetchShiftsFromCloud(branchId);
-    const openShift = shifts.find((s) => String(s.status).toUpperCase() === 'OPEN' && !s.endTime);
+    let openShift = shifts.find((s) => String(s.status).toUpperCase() === 'OPEN' && !s.endTime);
+
+    if (!openShift) {
+      const allShifts = await fetchShiftsFromCloud();
+      openShift = allShifts.find((s) => String(s.status).toUpperCase() === 'OPEN' && !s.endTime);
+    }
+
     if (openShift) {
       try {
         localStorage.setItem('minimarket_active_shift_v1', JSON.stringify(openShift));
@@ -163,9 +176,7 @@ export async function getActiveShiftServer(branchId = 'default-branch-001'): Pro
     if (localActive) {
       const parsed = JSON.parse(localActive);
       if (parsed && String(parsed.status).toUpperCase() === 'OPEN' && !parsed.endTime) {
-        if (!branchId || !parsed.branchId || parsed.branchId === branchId) {
-          return parsed;
-        }
+        return parsed;
       }
     }
   } catch (e) {}
