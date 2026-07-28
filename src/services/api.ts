@@ -298,7 +298,7 @@ export async function transferStockToShelf(
   if (!client) return { success: false, message: 'Koneksi Supabase Cloud tidak tersedia.' };
 
   try {
-    const { data: prodData, error } = await client.from('products').select('*').eq('id', productId).single();
+    const { data: prodData, error } = await client.from('products').select('*').eq('id', productId).maybeSingle();
     if (error || !prodData) {
       return { success: false, message: 'Produk tidak ditemukan di database online.' };
     }
@@ -376,7 +376,7 @@ export async function adjustShelfStock(
   if (!client) return { success: false, message: 'Koneksi database online tidak tersedia' };
 
   try {
-    const { data: prodData } = await client.from('products').select('*').eq('id', productId).single();
+    const { data: prodData } = await client.from('products').select('*').eq('id', productId).maybeSingle();
     if (!prodData) return { success: false, message: 'Produk tidak ditemukan' };
 
     const oldShelf = prodData.shelf_stock !== null ? Number(prodData.shelf_stock) : Number(prodData.stock || 0);
@@ -511,7 +511,7 @@ export async function updatePOStatus(poId: string, status: 'ORDERED' | 'RECEIVED
   const client = getSupabaseClient();
   if (!client) return false;
   try {
-    const { data: poData } = await client.from('purchase_orders').select('*').eq('id', poId).single();
+    const { data: poData } = await client.from('purchase_orders').select('*').eq('id', poId).maybeSingle();
     if (!poData) return false;
 
     const oldStatus = poData.status;

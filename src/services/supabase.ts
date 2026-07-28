@@ -260,27 +260,53 @@ export async function deleteProductFromCloud(productId: string): Promise<boolean
  * Sync Completed Transaction & Items to Supabase
  */
 export async function syncTransactionToCloud(tx: Transaction): Promise<boolean> {
+  // Always cache locally first so transaction is immediately available
+  try {
+    const localTxsJson = localStorage.getItem('minimarket_local_transactions_v1');
+    const localTxs: Transaction[] = localTxsJson ? JSON.parse(localTxsJson) : [];
+    const exists = localTxs.some((t: any) => t.id === tx.id || t.txUuid === tx.txUuid);
+    if (!exists) {
+      localTxs.unshift(tx);
+      localStorage.setItem('minimarket_local_transactions_v1', JSON.stringify(localTxs.slice(0, 500)));
+    }
+  } catch (e) {
+    console.warn('Failed to cache transaction locally:', e);
+  }
+
   if (!supabaseClient) return false;
 
   try {
     // 1. Ensure branch exists in Supabase branches table before referencing FK
     if (tx.branchId) {
-      await ensureBranchInCloud(tx.branchId);
+      try {
+        await ensureBranchInCloud(tx.branchId);
+      } catch (e) {
+        console.warn('Branch ensure warning:', e);
+      }
     }
 
     // 2. Ensure shift exists in Supabase shifts table before referencing FK
     const validShiftId = (tx.shiftId && tx.shiftId !== 'shift-offline') ? tx.shiftId : null;
     if (validShiftId) {
-      const { data: existingShift } = await supabaseClient.from('shifts').select('status').eq('id', validShiftId).single();
-      if (!existingShift) {
-        await supabaseClient.from('shifts').upsert({
-          id: validShiftId,
-          cashier_id: tx.cashierId || 'user-001',
-          cashier_name: tx.cashierName || 'Kasir',
-          branch_id: tx.branchId || null,
-          start_time: tx.createdAt || new Date().toISOString(),
-          status: 'OPEN'
-        }, { onConflict: 'id' });
+      try {
+        const { data: existingShift } = await supabaseClient
+          .from('shifts')
+          .select('id, status')
+          .eq('id', validShiftId)
+          .maybeSingle();
+
+        if (!existingShift) {
+          await supabaseClient.from('shifts').upsert({
+            id: validShiftId,
+            cashier_id: tx.cashierId || 'user-001',
+            cashier_name: tx.cashierName || 'Kasir',
+            branch_id: tx.branchId || null,
+            start_time: tx.createdAt || new Date().toISOString(),
+            status: 'OPEN'
+          }, { onConflict: 'id' });
+        }
+      } catch (e) {
+        console.warn('Shift ensure warning:', e);
       }
     }
 
@@ -288,21 +314,26 @@ export async function syncTransactionToCloud(tx: Transaction): Promise<boolean> 
     if (tx.items && tx.items.length > 0) {
       for (const item of tx.items) {
         if (item.product && item.product.id) {
-          const { data: existingProd } = await supabaseClient
-            .from('products')
-            .select('id')
-            .eq('id', item.product.id)
-            .maybeSingle();
+          try {
+            const { data: existingProd } = await supabaseClient
+              .from('products')
+              .select('id')
+              .eq('id', item.product.id)
+              .maybeSingle();
 
-          if (!existingProd) {
-            await syncProductToCloud(item.product);
+            if (!existingProd) {
+              await syncProductToCloud(item.product);
+            }
+          } catch (e) {
+            console.warn('Product existence check warning:', e);
           }
         }
       }
     }
 
     // 4. Insert/Upsert into transactions table
-    const { error: txError } = await supabaseClient.from('transactions').upsert({
+    let txError: any = null;
+    const txData = {
       id: tx.id,
       tx_uuid: tx.txUuid,
       branch_id: tx.branchId || null,
@@ -318,11 +349,23 @@ export async function syncTransactionToCloud(tx: Transaction): Promise<boolean> 
       paid_amount: tx.payAmount || 0,
       change_amount: tx.changeAmount || 0,
       created_at: tx.createdAt || new Date().toISOString()
-    }, { onConflict: 'id' });
+    };
+
+    const { error: primaryErr } = await supabaseClient.from('transactions').upsert(txData, { onConflict: 'id' });
+    txError = primaryErr;
+
+    // Retry without shift_id if shift_id FK failed
+    if (txError && validShiftId) {
+      console.warn('Transaction insert with shift_id failed, retrying with shift_id: null...', txError.message);
+      const { error: retryErr } = await supabaseClient.from('transactions').upsert({
+        ...txData,
+        shift_id: null
+      }, { onConflict: 'id' });
+      txError = retryErr;
+    }
 
     if (txError) {
       console.warn('Supabase transaction insert warning:', txError.message);
-      return false;
     }
 
     // 5. Insert items into transaction_items table
@@ -339,47 +382,62 @@ export async function syncTransactionToCloud(tx: Transaction): Promise<boolean> 
         subtotal: item.subtotal
       }));
 
-      const { error: itemsError } = await supabaseClient
-        .from('transaction_items')
-        .upsert(itemsToInsert, { onConflict: 'id' });
+      try {
+        const { error: itemsError } = await supabaseClient
+          .from('transaction_items')
+          .upsert(itemsToInsert, { onConflict: 'id' });
 
-      if (itemsError) {
-        console.warn('Supabase transaction_items insert warning:', itemsError.message);
+        if (itemsError) {
+          console.warn('Supabase transaction_items insert warning:', itemsError.message);
+        }
+      } catch (e) {
+        console.warn('Transaction items insert exception:', e);
       }
     }
 
     // 6. Deduct product stock in Supabase products table accurately based on latest DB stock
     if (tx.items && tx.items.length > 0) {
       for (const item of tx.items) {
-        if (!item.product || !item.product.id) continue;
+        if (!item.product || (!item.product.id && !item.product.barcode)) continue;
 
-        const { data: dbProd } = await supabaseClient
-          .from('products')
-          .select('stock, shelf_stock')
-          .eq('id', item.product.id)
-          .maybeSingle();
+        try {
+          let query = supabaseClient.from('products').select('id, stock, shelf_stock');
+          if (item.product.id) {
+            query = query.eq('id', item.product.id);
+          } else if (item.product.barcode) {
+            query = query.eq('barcode', item.product.barcode);
+          }
 
-        const currentStock = dbProd ? Number(dbProd.stock || 0) : Number(item.product.stock || 0);
-        const currentShelf = dbProd && dbProd.shelf_stock !== null && dbProd.shelf_stock !== undefined
-          ? Number(dbProd.shelf_stock)
-          : Number(item.product.shelfStock ?? currentStock);
+          const { data: dbProd } = await query.maybeSingle();
 
-        const newStock = Math.max(0, currentStock - item.quantity);
-        const newShelfStock = Math.max(0, currentShelf - item.quantity);
+          const prodId = dbProd?.id || item.product.id;
+          const currentStock = dbProd && dbProd.stock !== null && dbProd.stock !== undefined
+            ? Number(dbProd.stock)
+            : Number(item.product.stock || 0);
 
-        const { error: stockErr } = await supabaseClient
-          .from('products')
-          .update({
-            stock: newStock,
-            shelf_stock: newShelfStock,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', item.product.id);
+          const currentShelf = dbProd && dbProd.shelf_stock !== null && dbProd.shelf_stock !== undefined
+            ? Number(dbProd.shelf_stock)
+            : Number(item.product.shelfStock ?? currentStock);
 
-        if (stockErr) {
-          console.warn('Failed to update product stock in Supabase:', stockErr.message);
-        } else {
-          console.log(`✓ Deducted stock for ${item.product.name}: ${currentStock} -> ${newStock} (shelf: ${currentShelf} -> ${newShelfStock})`);
+          const newStock = Math.max(0, currentStock - item.quantity);
+          const newShelfStock = Math.max(0, currentShelf - item.quantity);
+
+          const { error: stockErr } = await supabaseClient
+            .from('products')
+            .update({
+              stock: newStock,
+              shelf_stock: newShelfStock,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', prodId);
+
+          if (stockErr) {
+            console.warn(`Failed to update stock for ${item.product.name}:`, stockErr.message);
+          } else {
+            console.log(`✓ Stock deducted for ${item.product.name}: ${currentStock} -> ${newStock} (shelf: ${currentShelf} -> ${newShelfStock})`);
+          }
+        } catch (e) {
+          console.error(`Error updating stock for ${item.product.name}:`, e);
         }
       }
     }
@@ -828,7 +886,21 @@ export async function fetchAuditLogsFromCloud(branchId?: string): Promise<AuditL
  * Fetch Transactions from Supabase
  */
 export async function fetchTransactionsFromCloud(branchId?: string): Promise<Transaction[]> {
-  if (!supabaseClient) return [];
+  const localTxsJson = typeof window !== 'undefined' ? localStorage.getItem('minimarket_local_transactions_v1') : null;
+  let localTxs: Transaction[] = [];
+  try {
+    if (localTxsJson) {
+      localTxs = JSON.parse(localTxsJson);
+      if (branchId) {
+        localTxs = localTxs.filter((t) => !t.branchId || t.branchId === branchId);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to parse local transactions:', e);
+  }
+
+  if (!supabaseClient) return localTxs;
+
   try {
     let query = supabaseClient.from('transactions').select('*, transaction_items(*)').order('created_at', { ascending: false }).limit(200);
     if (branchId) {
@@ -836,7 +908,7 @@ export async function fetchTransactionsFromCloud(branchId?: string): Promise<Tra
     }
     const { data, error } = await query;
     if (!error && data && data.length > 0) {
-      return data.map((d: any) => ({
+      const cloudTxs: Transaction[] = data.map((d: any) => ({
         id: d.id,
         txUuid: d.tx_uuid || d.id,
         branchId: d.branch_id || branchId || 'default-branch-001',
@@ -878,11 +950,25 @@ export async function fetchTransactionsFromCloud(branchId?: string): Promise<Tra
           subtotal: Number(ti.subtotal || 0)
         })) || []
       }));
+
+      // Combine cloud and local transactions avoiding duplicates
+      const mergedMap = new Map<string, Transaction>();
+      cloudTxs.forEach((t) => mergedMap.set(t.id, t));
+      localTxs.forEach((t) => {
+        if (!mergedMap.has(t.id)) {
+          mergedMap.set(t.id, t);
+        }
+      });
+
+      return Array.from(mergedMap.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
     }
   } catch (err) {
     console.warn('Error fetching transactions from Supabase:', err);
   }
-  return [];
+
+  return localTxs;
 }
 
 /**

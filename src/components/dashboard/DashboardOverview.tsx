@@ -73,19 +73,48 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
       const allTx = await fetchTransactionsFromCloud(activeBranch.id);
       setAllTransactions(allTx);
-      const todayStr = new Date().toISOString().slice(0, 10);
-      const currentMonthStr = new Date().toISOString().slice(0, 7);
 
-      const filteredToday = allTx.filter((t) => t.createdAt.startsWith(todayStr) && t.status === 'COMPLETED');
+      const now = new Date();
+      const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+      const isCompleted = (status?: string) => !status || String(status).toUpperCase() === 'COMPLETED';
+      const isSameDay = (dateStr: string, targetDate: Date) => {
+        if (!dateStr) return false;
+        try {
+          const d = new Date(dateStr);
+          return (
+            d.getFullYear() === targetDate.getFullYear() &&
+            d.getMonth() === targetDate.getMonth() &&
+            d.getDate() === targetDate.getDate()
+          );
+        } catch (e) {
+          return dateStr.startsWith(targetDate.toISOString().slice(0, 10));
+        }
+      };
+
+      const isSameMonth = (dateStr: string, targetDate: Date) => {
+        if (!dateStr) return false;
+        try {
+          const d = new Date(dateStr);
+          return (
+            d.getFullYear() === targetDate.getFullYear() &&
+            d.getMonth() === targetDate.getMonth()
+          );
+        } catch (e) {
+          return dateStr.startsWith(targetDate.toISOString().slice(0, 7));
+        }
+      };
+
+      const filteredToday = allTx.filter((t) => isSameDay(t.createdAt, now) && isCompleted(t.status));
       setTodayTransactions(filteredToday);
 
       // Calculate monthly revenue and profit
-      const monthTx = allTx.filter((t) => t.createdAt.startsWith(currentMonthStr) && t.status === 'COMPLETED');
+      const monthTx = allTx.filter((t) => isSameMonth(t.createdAt, now) && isCompleted(t.status));
       const mRev = monthTx.reduce((acc, t) => acc + t.grandTotal, 0);
       let mCogs = 0;
       monthTx.forEach((tx) => {
         tx.items.forEach((it) => {
-          mCogs += it.product.purchasePrice * it.quantity;
+          mCogs += (it.product?.purchasePrice || 0) * it.quantity;
         });
       });
       setMonthlyRevenue(mRev);
@@ -175,16 +204,32 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const lastXDays = Array.from({ length: trendDays }, (_, i) => {
     const d = new Date();
     d.setDate(d.getDate() - (trendDays - 1 - i));
-    const dateStr = d.toISOString().slice(0, 10);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const date = String(d.getDate()).padStart(2, '0');
+    const dateStr = `${year}-${month}-${date}`;
     const dayName = trendDays === 7 
       ? d.toLocaleDateString('id-ID', { weekday: 'short' })
       : `${d.getDate()}/${d.getMonth() + 1}`;
-    return { dateStr, dayName };
+    return { dateObj: d, dateStr, dayName };
   });
 
   const trendData = lastXDays.map((day) => {
     const amount = allTransactions
-      .filter((t) => (t.status === 'COMPLETED' || !t.status) && t.createdAt.startsWith(day.dateStr))
+      .filter((t) => {
+        const isComp = !t.status || String(t.status).toUpperCase() === 'COMPLETED';
+        if (!isComp) return false;
+        try {
+          const dt = new Date(t.createdAt);
+          return (
+            dt.getFullYear() === day.dateObj.getFullYear() &&
+            dt.getMonth() === day.dateObj.getMonth() &&
+            dt.getDate() === day.dateObj.getDate()
+          );
+        } catch (e) {
+          return t.createdAt.startsWith(day.dateStr);
+        }
+      })
       .reduce((acc, t) => acc + t.grandTotal, 0);
     return {
       day: day.dayName,
