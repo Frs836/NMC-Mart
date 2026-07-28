@@ -528,6 +528,17 @@ export async function syncAuditLogToCloud(log: AuditLog): Promise<boolean> {
  * Delete Cash Movement from Supabase
  */
 export async function deleteCashMovementFromCloud(id: string): Promise<boolean> {
+  try {
+    const localCmsJson = typeof window !== 'undefined' ? localStorage.getItem('minimarket_local_cash_movements_v1') : null;
+    if (localCmsJson) {
+      const localCms: CashMovement[] = JSON.parse(localCmsJson);
+      const filtered = localCms.filter((c: any) => c.id !== id);
+      localStorage.setItem('minimarket_local_cash_movements_v1', JSON.stringify(filtered));
+    }
+  } catch (e) {
+    console.warn('Failed to delete cash movement locally:', e);
+  }
+
   if (!supabaseClient) return false;
   try {
     const { error } = await supabaseClient.from('cash_movements').delete().eq('id', id);
@@ -546,12 +557,50 @@ export async function deleteCashMovementFromCloud(id: string): Promise<boolean> 
  * Sync Cash Movement to Supabase
  */
 export async function syncCashMovementToCloud(m: CashMovement): Promise<boolean> {
-  if (!supabaseClient) return false;
+  // Always cache locally in localStorage first
   try {
+    const localCmsJson = typeof window !== 'undefined' ? localStorage.getItem('minimarket_local_cash_movements_v1') : null;
+    const localCms: CashMovement[] = localCmsJson ? JSON.parse(localCmsJson) : [];
+    const index = localCms.findIndex((c: any) => c.id === m.id);
+    if (index >= 0) {
+      localCms[index] = m;
+    } else {
+      localCms.unshift(m);
+    }
+    localStorage.setItem('minimarket_local_cash_movements_v1', JSON.stringify(localCms.slice(0, 500)));
+  } catch (e) {
+    console.warn('Failed to cache cash movement locally:', e);
+  }
+
+  if (!supabaseClient) return false;
+
+  try {
+    if (m.branchId) {
+      try {
+        await ensureBranchInCloud(m.branchId);
+      } catch (e) {}
+    }
+
+    let validShiftId: string | null = m.shiftId && m.shiftId !== 'shift-offline' && m.shiftId !== 'active-shift' ? m.shiftId : null;
+    if (validShiftId) {
+      try {
+        const { data: existingShift } = await supabaseClient
+          .from('shifts')
+          .select('id')
+          .eq('id', validShiftId)
+          .maybeSingle();
+        if (!existingShift) {
+          validShiftId = null;
+        }
+      } catch (e) {
+        validShiftId = null;
+      }
+    }
+
     const { error } = await supabaseClient.from('cash_movements').upsert({
       id: m.id,
       branch_id: m.branchId || null,
-      shift_id: m.shiftId || null,
+      shift_id: validShiftId,
       type: m.type,
       amount: m.amount,
       category: m.category,
@@ -562,6 +611,19 @@ export async function syncCashMovementToCloud(m: CashMovement): Promise<boolean>
 
     if (error) {
       console.warn('Supabase cash movement warning:', error.message);
+      if (validShiftId) {
+        await supabaseClient.from('cash_movements').upsert({
+          id: m.id,
+          branch_id: m.branchId || null,
+          shift_id: null,
+          type: m.type,
+          amount: m.amount,
+          category: m.category,
+          description: m.description || null,
+          created_by: m.createdBy,
+          created_at: m.createdAt || new Date().toISOString()
+        }, { onConflict: 'id' });
+      }
       return false;
     }
     return true;
@@ -1052,7 +1114,21 @@ export async function pullCloudDataToLocal(branchId?: string): Promise<{ success
  * Fetch Cash Movements from Supabase
  */
 export async function fetchCashMovementsFromCloud(branchId?: string): Promise<CashMovement[]> {
-  if (!supabaseClient) return [];
+  const localCmsJson = typeof window !== 'undefined' ? localStorage.getItem('minimarket_local_cash_movements_v1') : null;
+  let localCms: CashMovement[] = [];
+  try {
+    if (localCmsJson) {
+      localCms = JSON.parse(localCmsJson);
+      if (branchId) {
+        localCms = localCms.filter((m) => !m.branchId || m.branchId === branchId);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to parse local cash movements:', e);
+  }
+
+  if (!supabaseClient) return localCms;
+
   try {
     let query = supabaseClient.from('cash_movements').select('*').order('created_at', { ascending: false }).limit(200);
     if (branchId) {
@@ -1060,7 +1136,7 @@ export async function fetchCashMovementsFromCloud(branchId?: string): Promise<Ca
     }
     const { data, error } = await query;
     if (!error && data && data.length > 0) {
-      return data.map((d: any) => ({
+      const cloudCms: CashMovement[] = data.map((d: any) => ({
         id: d.id,
         branchId: d.branch_id || branchId || 'default-branch-001',
         shiftId: d.shift_id || 'shift-offline',
@@ -1071,11 +1147,24 @@ export async function fetchCashMovementsFromCloud(branchId?: string): Promise<Ca
         createdBy: d.created_by || 'User',
         createdAt: d.created_at || new Date().toISOString()
       }));
+
+      const mergedMap = new Map<string, CashMovement>();
+      cloudCms.forEach((m) => mergedMap.set(m.id, m));
+      localCms.forEach((m) => {
+        if (!mergedMap.has(m.id)) {
+          mergedMap.set(m.id, m);
+        }
+      });
+
+      return Array.from(mergedMap.values()).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
     }
   } catch (err) {
     console.warn('Error fetching cash movements from Supabase:', err);
   }
-  return [];
+
+  return localCms;
 }
 
 /**

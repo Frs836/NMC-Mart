@@ -466,6 +466,7 @@ export async function getPurchaseOrders(branchId = 'default-branch-001'): Promis
         totalAmount: Number(d.total_amount || 0),
         status: d.status,
         items: d.items || [],
+        createdBy: d.created_by || 'Admin',
         createdAt: d.created_at,
         receivedAt: d.received_at,
         receivedBy: d.received_by
@@ -619,7 +620,8 @@ export async function getSalesTargets(branchId = 'default-branch-001'): Promise<
         id: d.id,
         branchId: d.branch_id,
         monthYear: d.month_year,
-        targetAmount: Number(d.target_amount || 0),
+        targetRevenue: Number(d.target_revenue || d.target_amount || 0),
+        targetProfit: Number(d.target_profit || 0),
         createdAt: d.created_at
       }));
     }
@@ -640,7 +642,8 @@ export async function saveSalesTarget(target: Omit<SalesTarget, 'id' | 'createdA
       id: fullTarget.id,
       branch_id: fullTarget.branchId,
       month_year: fullTarget.monthYear,
-      target_amount: fullTarget.targetAmount,
+      target_revenue: fullTarget.targetRevenue,
+      target_profit: fullTarget.targetProfit,
       created_at: fullTarget.createdAt
     });
   }

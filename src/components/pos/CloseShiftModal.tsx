@@ -43,7 +43,7 @@ export const CloseShiftModal: React.FC<CloseShiftModalProps> = ({
 
         const shiftTxs = cloudTxs.filter((t) => {
           if (t.shiftId === activeShift.id) return true;
-          return new Date(t.timestamp).getTime() >= startTime;
+          return new Date(t.createdAt).getTime() >= startTime;
         });
 
         let cSales = 0;

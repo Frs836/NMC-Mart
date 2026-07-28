@@ -20,11 +20,11 @@ import {
   X,
   Check
 } from 'lucide-react';
-import { Product, Transaction, Shift, UserRole, SalesTarget } from '../../types';
+import { Product, Transaction, Shift, UserRole, SalesTarget, CashMovement } from '../../types';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { ReceiptModal } from '../pos/ReceiptModal';
 import { getSalesTargets, saveSalesTarget, logAudit } from '../../services/api';
-import { fetchProductsFromDatabase, fetchTransactionsFromCloud } from '../../services/supabase';
+import { fetchProductsFromDatabase, fetchTransactionsFromCloud, fetchCashMovementsFromCloud, syncCashMovementToCloud } from '../../services/supabase';
 
 interface DashboardOverviewProps {
   userRole: UserRole;
@@ -47,6 +47,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [todayTransactions, setTodayTransactions] = useState<Transaction[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
+  const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
   const [expenseNote, setExpenseNote] = useState('');
   const [expenseAmount, setExpenseAmount] = useState<string>('');
   const [expenseCategory, setExpenseCategory] = useState('Operasional');
@@ -140,6 +141,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
       const sortedRecent = [...allTx].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
       setRecentTransactions(sortedRecent);
+
+      // Fetch Cash Movements
+      const cms = await fetchCashMovementsFromCloud(activeBranch?.id);
+      setCashMovements(cms);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
     }
@@ -254,19 +259,35 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     if (!expenseAmount || parseFloat(expenseAmount) <= 0) return;
 
     try {
+      const amt = parseFloat(expenseAmount);
+      const newMovement: CashMovement = {
+        id: `cash-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        branchId: activeBranch?.id || 'default-branch-001',
+        shiftId: activeShift?.id || 'active-shift',
+        type: 'EXPENSE_OUT',
+        amount: amt,
+        category: expenseCategory,
+        description: expenseNote || 'Pengeluaran Cepat Dashboard',
+        createdBy: 'Operator',
+        createdAt: new Date().toISOString()
+      };
+
+      await syncCashMovementToCloud(newMovement);
+
       await logAudit(
         'PENGELUARAN_CEPAT',
         'KEUANGAN',
-        `Catat pengeluaran [${expenseCategory}]: Rp ${expenseAmount} - ${expenseNote || 'Tanpa Catatan'}`,
+        `Catat pengeluaran [${expenseCategory}]: Rp ${amt.toLocaleString('id-ID')} - ${expenseNote || 'Tanpa Catatan'}`,
         'Sistem',
         'current-user',
-        activeBranch.id
+        activeBranch?.id || 'default-branch-001'
       );
 
       setExpenseNote('');
       setExpenseAmount('');
       setIsExpenseSuccess(true);
       setTimeout(() => setIsExpenseSuccess(false), 3000);
+      await loadDashboardData();
     } catch (err) {
       console.error('Add expense error:', err);
     }
@@ -389,6 +410,74 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
         )}
       </div>
+
+      {/* Arus Kas Hari Ini (Kas In & Kas Out) Summary Widget */}
+      {(() => {
+        const isSameDay = (dateStr: string, targetDate: Date) => {
+          if (!dateStr) return false;
+          try {
+            const d = new Date(dateStr);
+            return (
+              d.getFullYear() === targetDate.getFullYear() &&
+              d.getMonth() === targetDate.getMonth() &&
+              d.getDate() === targetDate.getDate()
+            );
+          } catch (e) {
+            return dateStr.startsWith(targetDate.toISOString().slice(0, 10));
+          }
+        };
+
+        const todayMovements = cashMovements.filter((m) => isSameDay(m.createdAt, today));
+        const totalCashInToday = todayMovements.filter((m) => m.type === 'CASH_IN').reduce((acc, m) => acc + m.amount, 0);
+        const totalCashOutToday = todayMovements.filter((m) => m.type === 'EXPENSE_OUT').reduce((acc, m) => acc + m.amount, 0);
+        const netCashflowToday = totalCashInToday - totalCashOutToday;
+
+        return (
+          <div className="bg-[#eef2f6] rounded-3xl p-5 sm:p-6 shadow-[8px_8px_16px_#cbd2d9,-8px_-8px_16px_#ffffff] border border-white/60 space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center shadow-[inset_2px_2px_4px_#cbd2d9] shrink-0">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-slate-800">Ringkasan Kas Masuk & Kas Keluar (Hari Ini)</h3>
+                  <p className="text-xs text-slate-500 font-bold">Terintegrasi dengan Tab Keuangan & Audit Log</p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setActiveTab('finance')}
+                className="px-4 py-2 bg-[#eef2f6] hover:bg-emerald-50 text-emerald-800 font-extrabold text-xs rounded-2xl shadow-[3px_3px_6px_#cbd2d9,-3px_-3px_6px_#ffffff] active:shadow-[inset_2px_2px_4px_#cbd2d9] flex items-center gap-1.5 transition-all shrink-0"
+              >
+                <span>Kelola Keuangan Lengkap</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-[#eef2f6] p-4 rounded-2xl shadow-[inset_3px_3px_6px_#cbd2d9,inset_-3px_-3px_6px_#ffffff] space-y-1">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 block">Total Kas Masuk (In)</span>
+                <p className="text-lg font-black text-emerald-800">+{formatCurrency(totalCashInToday)}</p>
+                <span className="text-[10px] text-slate-500 font-semibold block">{todayMovements.filter(m => m.type === 'CASH_IN').length} Transaksi Masuk</span>
+              </div>
+
+              <div className="bg-[#eef2f6] p-4 rounded-2xl shadow-[inset_3px_3px_6px_#cbd2d9,inset_-3px_-3px_6px_#ffffff] space-y-1">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 block">Total Kas Keluar (Out)</span>
+                <p className="text-lg font-black text-rose-700">-{formatCurrency(totalCashOutToday)}</p>
+                <span className="text-[10px] text-slate-500 font-semibold block">{todayMovements.filter(m => m.type === 'EXPENSE_OUT').length} Transaksi Keluar</span>
+              </div>
+
+              <div className="bg-[#eef2f6] p-4 rounded-2xl shadow-[inset_3px_3px_6px_#cbd2d9,inset_-3px_-3px_6px_#ffffff] space-y-1">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-600 block">Saldo Kas Operasional Bersih</span>
+                <p className={`text-lg font-black ${netCashflowToday >= 0 ? 'text-slate-800' : 'text-rose-600'}`}>
+                  {netCashflowToday >= 0 ? '+' : ''}{formatCurrency(netCashflowToday)}
+                </p>
+                <span className="text-[10px] text-slate-500 font-semibold block">Kas In dikurangi Kas Out</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Sales Target KPI Section (Owner & Manager) */}
       {userRole !== 'CASHIER' && (
