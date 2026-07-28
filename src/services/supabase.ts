@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ENV_CONFIG, isSupabaseConfigured } from '../config/env';
 import { Product, Transaction, Shift, AuditLog, Branch, User, CashMovement, ShelfStockTransfer, TeamMessage } from '../types';
+import { INITIAL_PRODUCTS } from '../db/seed';
 
 let supabaseClient: SupabaseClient | null = null;
 
@@ -283,11 +284,19 @@ export async function syncTransactionToCloud(tx: Transaction): Promise<boolean> 
       }
     }
 
-    // 3. Ensure all items exist in products table
+    // 3. Ensure missing items exist in products table without overwriting existing stock
     if (tx.items && tx.items.length > 0) {
       for (const item of tx.items) {
-        if (item.product) {
-          await syncProductToCloud(item.product);
+        if (item.product && item.product.id) {
+          const { data: existingProd } = await supabaseClient
+            .from('products')
+            .select('id')
+            .eq('id', item.product.id)
+            .maybeSingle();
+
+          if (!existingProd) {
+            await syncProductToCloud(item.product);
+          }
         }
       }
     }
@@ -339,16 +348,40 @@ export async function syncTransactionToCloud(tx: Transaction): Promise<boolean> 
       }
     }
 
-    // 6. Update product stock in Supabase products table
-    for (const item of tx.items) {
-      const updatedStock = Math.max(0, item.product.stock - item.quantity);
-      const updatedShelfStock = Math.max(0, (item.product.shelfStock ?? item.product.stock) - item.quantity);
+    // 6. Deduct product stock in Supabase products table accurately based on latest DB stock
+    if (tx.items && tx.items.length > 0) {
+      for (const item of tx.items) {
+        if (!item.product || !item.product.id) continue;
 
-      await supabaseClient.from('products').update({
-        stock: updatedStock,
-        shelf_stock: updatedShelfStock,
-        updated_at: new Date().toISOString()
-      }).eq('id', item.product.id);
+        const { data: dbProd } = await supabaseClient
+          .from('products')
+          .select('stock, shelf_stock')
+          .eq('id', item.product.id)
+          .maybeSingle();
+
+        const currentStock = dbProd ? Number(dbProd.stock || 0) : Number(item.product.stock || 0);
+        const currentShelf = dbProd && dbProd.shelf_stock !== null && dbProd.shelf_stock !== undefined
+          ? Number(dbProd.shelf_stock)
+          : Number(item.product.shelfStock ?? currentStock);
+
+        const newStock = Math.max(0, currentStock - item.quantity);
+        const newShelfStock = Math.max(0, currentShelf - item.quantity);
+
+        const { error: stockErr } = await supabaseClient
+          .from('products')
+          .update({
+            stock: newStock,
+            shelf_stock: newShelfStock,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', item.product.id);
+
+        if (stockErr) {
+          console.warn('Failed to update product stock in Supabase:', stockErr.message);
+        } else {
+          console.log(`✓ Deducted stock for ${item.product.name}: ${currentStock} -> ${newStock} (shelf: ${currentShelf} -> ${newShelfStock})`);
+        }
+      }
     }
 
     console.log('✓ Transaction synced to Supabase Cloud:', tx.txUuid);
@@ -512,6 +545,15 @@ export async function fetchProductsFromDatabase(branchId: string): Promise<Produ
           createdAt: d.created_at || new Date().toISOString(),
           updatedAt: d.updated_at || new Date().toISOString()
         }));
+      }
+
+      // If database products table is empty, seed INITIAL_PRODUCTS automatically
+      if (!error && (!data || data.length === 0)) {
+        console.log('Seeding INITIAL_PRODUCTS into empty Supabase products table...');
+        for (const prod of INITIAL_PRODUCTS) {
+          await syncProductToCloud({ ...prod, branchId });
+        }
+        return INITIAL_PRODUCTS;
       }
     } catch (err) {
       console.warn('Failed fetching from Supabase:', err);

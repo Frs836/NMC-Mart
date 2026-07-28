@@ -220,6 +220,16 @@ export function useAppStore() {
     setStoreLogoUrlState(logoUrl);
     try {
       localStorage.setItem(STORE_LOGO_STORAGE_KEY, logoUrl);
+      const favicon = document.getElementById('app-favicon') as HTMLLinkElement;
+      if (favicon) {
+        if (logoUrl && logoUrl.trim()) {
+          favicon.href = logoUrl;
+          favicon.type = 'image/png';
+        } else {
+          favicon.href = "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23059669' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7'/><path d='M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8'/><path d='M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4'/><path d='M2 7h20'/></svg>";
+          favicon.type = 'image/svg+xml';
+        }
+      }
     } catch (e) {
       console.warn('Failed to save store logo to localStorage:', e);
     }
