@@ -1,0 +1,10 @@
+{
+  "name": "Remix: RetailFlow POS",
+  "description": "Mobile-first, offline-ready retail POS for minimarkets featuring AI assistance, real-time inventory, and multi-branch scalability.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

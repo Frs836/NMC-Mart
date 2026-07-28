@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@media print {
+  /* Hide navigation, headers, floating menus, and non-printable buttons */
+  nav,
+  header,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Ensure containers print with high contrast and no box shadows */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  .print\:p-0 {
+    padding: 0 !important;
+  }
+
+  /* Prevent awkward page breaks inside cards */
+  .bg-\[\#eef2f6\] {
+    background-color: #ffffff !important;
+    border: 1px solid #cbd2d9 !important;
+    page-break-inside: avoid;
+  }
+}
