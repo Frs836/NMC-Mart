@@ -50,9 +50,14 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
 
   const loadPOs = async () => {
     setLoading(true);
-    const list = await getPurchaseOrders(activeBranch?.id || 'default-branch-001');
-    setPoList(list);
-    setLoading(false);
+    try {
+      const list = await getPurchaseOrders(activeBranch?.id || 'default-branch-001');
+      setPoList(list);
+    } catch (e) {
+      console.error('Gagal memuat daftar PO:', e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -101,29 +106,39 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
     const totalAmount = poItems.reduce((acc, item) => acc + item.totalCost, 0);
     const poNum = `PO-${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-    await createPurchaseOrder({
-      poNumber: poNum,
-      branchId: activeBranch?.id || 'default-branch-001',
-      supplierName: supplierName.trim(),
-      items: poItems,
-      totalAmount,
-      status: 'ORDERED',
-      createdBy: currentUser?.name || 'Manager',
-      notes
-    });
+    try {
+      await createPurchaseOrder({
+        poNumber: poNum,
+        branchId: activeBranch?.id || 'default-branch-001',
+        supplierName: supplierName.trim(),
+        items: poItems,
+        totalAmount,
+        status: 'ORDERED',
+        createdBy: currentUser?.name || 'Manager',
+        notes
+      });
 
-    setSupplierName('');
-    setNotes('');
-    setPoItems([]);
-    setActiveTab('LIST');
-    loadPOs();
+      setSupplierName('');
+      setNotes('');
+      setPoItems([]);
+      setActiveTab('LIST');
+      loadPOs();
+    } catch (err: any) {
+      console.error('Gagal membuat PO:', err);
+      alert('Gagal menyimpan Purchase Order. Periksa koneksi dan coba lagi.');
+    }
   };
 
   const handleReceiveStock = async (po: PurchaseOrder) => {
     if (confirm(`Konfirmasi penerimaan barang untuk PO #${po.poNumber}? Stok di gudang akan bertambah otomatis.`)) {
-      await updatePOStatus(po.id, 'RECEIVED', currentUser?.name || 'Manager');
-      loadPOs();
-      onStockUpdated();
+      try {
+        await updatePOStatus(po.id, 'RECEIVED', currentUser?.name || 'Manager');
+        loadPOs();
+        onStockUpdated();
+      } catch (err: any) {
+        console.error('Gagal terima barang PO:', err);
+        alert('Gagal memproses penerimaan barang. Periksa koneksi dan coba lagi.');
+      }
     }
   };
 

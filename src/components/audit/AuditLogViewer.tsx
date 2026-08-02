@@ -9,7 +9,6 @@ export const AuditLogViewer: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedModule, setSelectedModule] = useState('SEMUA');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
     loadLogs();
@@ -96,12 +95,6 @@ export const AuditLogViewer: React.FC = () => {
           <span>{isRefreshing ? 'Memuat...' : 'Muat Ulang Audit'}</span>
         </button>
       </div>
-
-      {toastMessage && (
-        <div className="bg-emerald-600 text-white font-bold text-xs p-3 rounded-2xl shadow-md flex items-center justify-between">
-          <span>✓ {toastMessage}</span>
-        </div>
-      )}
 
       {/* Search & Module Filters */}
       <div className="bg-[#eef2f6] p-4 rounded-3xl shadow-[6px_6px_12px_#cbd2d9,-6px_-6px_12px_#ffffff] border border-white/60 space-y-3">

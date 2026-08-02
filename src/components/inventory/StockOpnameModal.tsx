@@ -36,19 +36,24 @@ export const StockOpnameModal: React.FC<StockOpnameModalProps> = ({
       stock: physicalCount
     };
 
-    await saveProduct(updated, currentUser.name);
-    await logAudit(
-      'STOCK_OPNAME_ADJUSTMENT',
-      'INVENTORY',
-      `Stok Opname produk ${selectedProduct.name}: Stok Sistem (${selectedProduct.stock}) -> Fisik (${physicalCount}), Selisih: ${
-        variance > 0 ? '+' + variance : variance
-      }. Alasan: ${notes || 'Audit Opname Rutin'}`,
-      currentUser.name,
-      currentUser.id
-    );
+    try {
+      await saveProduct(updated, currentUser.name);
+      await logAudit(
+        'STOCK_OPNAME_ADJUSTMENT',
+        'INVENTORY',
+        `Stok Opname produk ${selectedProduct.name}: Stok Sistem (${selectedProduct.stock}) -> Fisik (${physicalCount}), Selisih: ${
+          variance > 0 ? '+' + variance : variance
+        }. Alasan: ${notes || 'Audit Opname Rutin'}`,
+        currentUser.name,
+        currentUser.id
+      );
 
-    onRefresh();
-    onClose();
+      onRefresh();
+      onClose();
+    } catch (err: any) {
+      console.error('Gagal simpan opname:', err);
+      alert('Gagal menyimpan opname stok. Periksa koneksi dan coba lagi.');
+    }
   };
 
   return (

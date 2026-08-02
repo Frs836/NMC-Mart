@@ -44,17 +44,22 @@ export const StockPurchaseModal: React.FC<StockPurchaseModalProps> = ({
       supplierName: supplier || selectedProduct.supplierName
     };
 
-    await saveProduct(updated, currentUser.name);
-    await logAudit(
-      'INBOUND_STOCK_PURCHASE',
-      'INVENTORY',
-      `Pembelian stok masuk +${inboundQty} unit ${selectedProduct.name} dengan harga ${formatCurrency(unitCost)}/unit. Supplier: ${supplier || 'Utama'}`,
-      currentUser.name,
-      currentUser.id
-    );
+    try {
+      await saveProduct(updated, currentUser.name);
+      await logAudit(
+        'INBOUND_STOCK_PURCHASE',
+        'INVENTORY',
+        `Pembelian stok masuk +${inboundQty} unit ${selectedProduct.name} dengan harga ${formatCurrency(unitCost)}/unit. Supplier: ${supplier || 'Utama'}`,
+        currentUser.name,
+        currentUser.id
+      );
 
-    onRefresh();
-    onClose();
+      onRefresh();
+      onClose();
+    } catch (err: any) {
+      console.error('Gagal simpan pembelian stok:', err);
+      alert('Gagal menyimpan stok masuk. Periksa koneksi dan coba lagi.');
+    }
   };
 
   return (

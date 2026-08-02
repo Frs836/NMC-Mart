@@ -92,21 +92,26 @@ export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, curr
       createdAt: txTimestamp
     };
 
-    await syncCashMovementToCloud(newMovement);
-    
-    // Log Audit
-    await logAudit(
-      movementType === 'EXPENSE_OUT' ? 'PENCATATAN_PENGELUARAN' : 'PENCATATAN_KAS_MASUK',
-      'KEUANGAN',
-      `[TAMBAH ${movementType === 'CASH_IN' ? 'KAS MASUK' : 'PENGELUARAN'}] Nominal: ${formatCurrency(amount)}, Kategori: ${category}, Ket: ${description || '-'}`,
-      currentUser?.name || 'Operator',
-      currentUser?.id || 'user-001',
-      activeBranch?.id || 'default-branch-001'
-    );
+    try {
+      await syncCashMovementToCloud(newMovement);
 
-    setIsAddExpenseOpen(false);
-    showToast(`Berhasil mencatat ${movementType === 'CASH_IN' ? 'Kas Masuk' : 'Pengeluaran'} baru sebesar ${formatCurrency(amount)}.`);
-    loadMovements();
+      // Log Audit
+      await logAudit(
+        movementType === 'EXPENSE_OUT' ? 'PENCATATAN_PENGELUARAN' : 'PENCATATAN_KAS_MASUK',
+        'KEUANGAN',
+        `[TAMBAH ${movementType === 'CASH_IN' ? 'KAS MASUK' : 'PENGELUARAN'}] Nominal: ${formatCurrency(amount)}, Kategori: ${category}, Ket: ${description || '-'}`,
+        currentUser?.name || 'Operator',
+        currentUser?.id || 'user-001',
+        activeBranch?.id || 'default-branch-001'
+      );
+
+      setIsAddExpenseOpen(false);
+      showToast(`Berhasil mencatat ${movementType === 'CASH_IN' ? 'Kas Masuk' : 'Pengeluaran'} baru sebesar ${formatCurrency(amount)}.`);
+      loadMovements();
+    } catch (err: any) {
+      console.error('Gagal mencatat arus kas:', err);
+      showToast('Gagal menyimpan arus kas. Periksa koneksi dan coba lagi.');
+    }
   };
 
   // Open Edit Modal
@@ -140,42 +145,52 @@ export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, curr
       createdAt: customTxDate ? new Date(customTxDate).toISOString() : editingMovement.createdAt
     };
 
-    await syncCashMovementToCloud(updated);
+    try {
+      await syncCashMovementToCloud(updated);
 
-    // Log Audit
-    await logAudit(
-      'EDIT_TRANSAKSI_KAS',
-      'KEUANGAN',
-      `[EDIT KAS] ID: ${editingMovement.id}. Sebelum: ${oldType} (${formatCurrency(oldAmount)}) -> Sesudah: ${movementType} (${formatCurrency(amount)}). Ket: ${description}`,
-      currentUser?.name || 'Operator',
-      currentUser?.id || 'user-001',
-      activeBranch?.id || 'default-branch-001'
-    );
+      // Log Audit
+      await logAudit(
+        'EDIT_TRANSAKSI_KAS',
+        'KEUANGAN',
+        `[EDIT KAS] ID: ${editingMovement.id}. Sebelum: ${oldType} (${formatCurrency(oldAmount)}) -> Sesudah: ${movementType} (${formatCurrency(amount)}). Ket: ${description}`,
+        currentUser?.name || 'Operator',
+        currentUser?.id || 'user-001',
+        activeBranch?.id || 'default-branch-001'
+      );
 
-    setEditingMovement(null);
-    showToast('Pembaruan data arus kas berhasil disimpan & dicatat di Log Audit.');
-    loadMovements();
+      setEditingMovement(null);
+      showToast('Pembaruan data arus kas berhasil disimpan & dicatat di Log Audit.');
+      loadMovements();
+    } catch (err: any) {
+      console.error('Gagal edit arus kas:', err);
+      showToast('Gagal memperbarui arus kas. Periksa koneksi dan coba lagi.');
+    }
   };
 
   // Delete Cash Movement
   const handleConfirmDelete = async () => {
     if (!deletingMovement) return;
 
-    await deleteCashMovementFromCloud(deletingMovement.id);
+    try {
+      await deleteCashMovementFromCloud(deletingMovement.id);
 
-    // Log Audit
-    await logAudit(
-      'HAPUS_TRANSAKSI_KAS',
-      'KEUANGAN',
-      `[HAPUS KAS] Dihapus ${deletingMovement.type} sebesar ${formatCurrency(deletingMovement.amount)} [${deletingMovement.category}] - ${deletingMovement.description}`,
-      currentUser?.name || 'Operator',
-      currentUser?.id || 'user-001',
-      activeBranch?.id || 'default-branch-001'
-    );
+      // Log Audit
+      await logAudit(
+        'HAPUS_TRANSAKSI_KAS',
+        'KEUANGAN',
+        `[HAPUS KAS] Dihapus ${deletingMovement.type} sebesar ${formatCurrency(deletingMovement.amount)} [${deletingMovement.category}] - ${deletingMovement.description}`,
+        currentUser?.name || 'Operator',
+        currentUser?.id || 'user-001',
+        activeBranch?.id || 'default-branch-001'
+      );
 
-    setDeletingMovement(null);
-    showToast('Pencatatan arus kas telah berhasil dihapus dari sistem & audit.');
-    loadMovements();
+      setDeletingMovement(null);
+      showToast('Pencatatan arus kas telah berhasil dihapus dari sistem & audit.');
+      loadMovements();
+    } catch (err: any) {
+      console.error('Gagal hapus arus kas:', err);
+      showToast('Gagal menghapus arus kas. Periksa koneksi dan coba lagi.');
+    }
   };
 
   // Filter movements by timeframe and date range

@@ -61,23 +61,29 @@ export const RackTransferModal: React.FC<RackTransferModalProps> = ({
     setIsSubmitting(true);
     setFeedback(null);
 
-    const res = await transferStockToShelf(selectedProduct.id, quantity, currentOperatorName, notes);
-    setIsSubmitting(false);
+    try {
+      const res = await transferStockToShelf(selectedProduct.id, quantity, currentOperatorName, notes);
 
-    if (res.success) {
-      setFeedback({
-        type: 'success',
-        text: `✓ Berhasil memindahkan ${quantity} unit ${selectedProduct.name} ke etalase rak!`
-      });
-      setTimeout(() => {
-        onSuccess();
-        onClose();
-      }, 1000);
-    } else {
-      setFeedback({
-        type: 'error',
-        text: res.message || 'Gagal memindahkan stok.'
-      });
+      if (res.success) {
+        setFeedback({
+          type: 'success',
+          text: `✓ Berhasil memindahkan ${quantity} unit ${selectedProduct.name} ke etalase rak!`
+        });
+        setTimeout(() => {
+          onSuccess();
+          onClose();
+        }, 1000);
+      } else {
+        setFeedback({
+          type: 'error',
+          text: res.message || 'Gagal memindahkan stok.'
+        });
+      }
+    } catch (e: any) {
+      console.error('Gagal transfer rak:', e);
+      setFeedback({ type: 'error', text: e?.message || 'Gagal memindahkan stok. Periksa koneksi dan coba lagi.' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 

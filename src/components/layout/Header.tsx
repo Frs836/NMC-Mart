@@ -78,7 +78,7 @@ export const Header: React.FC<HeaderProps> = ({
             {isOnline ? <Wifi className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <WifiOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />}
             <span className="hidden md:inline">{isOnline ? 'Online' : 'Offline'}</span>
             {unsyncedCount > 0 && (
-              <span className="bg-amber-500 text-white px-1.5 py-0.2 rounded-full font-bold text-[10px] animate-pulse">
+              <span className="bg-amber-500 text-white px-1.5 py-0.5 rounded-full font-bold text-[10px] animate-pulse">
                 {unsyncedCount}
               </span>
             )}

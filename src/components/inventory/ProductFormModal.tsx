@@ -65,10 +65,21 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
       return;
     }
 
+    const purchasePrice = Number(formData.purchasePrice) || 0;
+    const sellingPrice = Number(formData.sellingPrice) || 0;
+    if (sellingPrice < purchasePrice) {
+      const proceed = confirm(
+        `Harga jual (Rp ${sellingPrice.toLocaleString('id-ID')}) lebih rendah dari harga beli (Rp ${purchasePrice.toLocaleString('id-ID')}).\n\nMargin akan negatif. Tetap simpan?`
+      );
+      if (!proceed) return;
+    }
+
     const finalCategory = isCustomCategory ? (customCategoryText.trim() || 'Lainnya') : (formData.category || 'Minuman');
 
     onSave({
       ...formData,
+      purchasePrice,
+      sellingPrice,
       category: finalCategory
     });
   };
