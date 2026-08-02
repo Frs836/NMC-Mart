@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Users, UserPlus, Shield, KeyRound, Edit2, Trash2, Check, X, Building2, Lock, Sparkles, UserCheck } from 'lucide-react';
 import { User, UserRole, Branch } from '../../types';
-import { syncUserToCloud } from '../../services/supabase';
+import { syncUserToCloud, deleteUserFromCloud } from '../../services/supabase';
 
 interface UserAccountsManagerProps {
   users: User[];
@@ -92,7 +92,7 @@ export const UserAccountsManager: React.FC<UserAccountsManagerProps> = ({
     setIsFormOpen(false);
   };
 
-  const handleDelete = (u: User) => {
+  const handleDelete = async (u: User) => {
     if (u.id === currentUser.id) {
       alert('Anda tidak dapat menghapus akun Anda sendiri yang sedang digunakan!');
       return;
@@ -106,6 +106,7 @@ export const UserAccountsManager: React.FC<UserAccountsManagerProps> = ({
 
     if (confirm(`Apakah Anda yakin ingin menghapus akun "${u.name}" (${u.email})?`)) {
       onDeleteUser(u.id);
+      await deleteUserFromCloud(u.id);
       showToast(`Akun "${u.name}" berhasil dihapus.`);
     }
   };
@@ -131,6 +132,13 @@ export const UserAccountsManager: React.FC<UserAccountsManagerProps> = ({
           <span className="px-2.5 py-1 rounded-xl text-[10px] font-black uppercase bg-slate-200 text-slate-700 border border-slate-300 flex items-center gap-1 w-fit">
             <Lock className="w-3 h-3 text-slate-500" />
             Kasir (Terlock POS)
+          </span>
+        );
+      case 'MAINTENANCE':
+        return (
+          <span className="px-2.5 py-1 rounded-xl text-[10px] font-black uppercase bg-purple-100 text-purple-800 border border-purple-300 flex items-center gap-1 w-fit">
+            <Shield className="w-3 h-3 text-purple-600" />
+            Maintenance
           </span>
         );
     }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Wallet, ArrowDownRight, ArrowUpRight, Plus, Receipt, X, Edit2, Trash2, Search, Calendar, Filter, CheckCircle, ShieldAlert } from 'lucide-react';
 import { CashMovement, UserRole } from '../../types';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, toLocalDateKey } from '../../utils/formatters';
 import { logAudit } from '../../services/api';
 import { syncCashMovementToCloud, deleteCashMovementFromCloud, fetchCashMovementsFromCloud, fetchShiftsFromCloud } from '../../services/supabase';
 
@@ -20,9 +20,9 @@ export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, curr
   const [startDate, setStartDate] = useState<string>(() => {
     const d = new Date();
     d.setDate(d.getDate() - 7);
-    return d.toISOString().slice(0, 10);
+    return toLocalDateKey(d);
   });
-  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState<string>(() => toLocalDateKey(new Date()));
 
   // Modals state
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
@@ -71,6 +71,10 @@ export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, curr
   // Create Cash Movement
   const handleAddMovement = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (userRole === 'CASHIER') {
+      showToast('Akses ditolak: Kasir tidak dapat mencatat arus kas.');
+      return;
+    }
     const txTimestamp = customTxDate ? new Date(customTxDate).toISOString() : new Date().toISOString();
     
     const allShifts = await fetchShiftsFromCloud(activeBranch?.id);
@@ -119,6 +123,10 @@ export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, curr
   const handleSaveEditMovement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingMovement) return;
+    if (userRole === 'CASHIER') {
+      showToast('Akses ditolak: Kasir tidak dapat mengubah arus kas.');
+      return;
+    }
 
     const oldAmount = editingMovement.amount;
     const oldType = editingMovement.type;

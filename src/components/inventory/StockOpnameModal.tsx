@@ -26,6 +26,10 @@ export const StockOpnameModal: React.FC<StockOpnameModalProps> = ({
   const handleSaveOpname = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct) return;
+    if (!Number.isFinite(physicalCount) || physicalCount < 0) {
+      alert('Jumlah hitung fisik tidak boleh negatif atau kosong.');
+      return;
+    }
 
     const updated = {
       ...selectedProduct,
@@ -102,6 +106,7 @@ export const StockOpnameModal: React.FC<StockOpnameModalProps> = ({
               type="number"
               value={physicalCount}
               onChange={(e) => setPhysicalCount(Number(e.target.value))}
+              min={0}
               required
               className="w-full bg-[#eef2f6] text-amber-800 font-black text-xl p-3 rounded-2xl shadow-[inset_2px_2px_4px_#cbd2d9] border-none focus:outline-none"
             />

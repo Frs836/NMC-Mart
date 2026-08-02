@@ -45,19 +45,24 @@ export const AuditLogViewer: React.FC = () => {
 
   const modules = ['SEMUA', 'KASIR', 'INVENTARIS', 'SHIFT', 'KEUANGAN', 'SISTEM', 'OFFLINE'];
 
-  const moduleMap: { [key: string]: string } = {
-    SEMUA: 'ALL',
-    KASIR: 'POS',
-    INVENTARIS: 'INVENTORY',
-    SHIFT: 'SHIFT',
-    KEUANGAN: 'FINANCE',
-    SISTEM: 'SYSTEM',
-    OFFLINE: 'OFFLINE_ENGINE'
+  // Nilai module yang benar-benar ditulis logAudit(): POS, POS_SHIFT, POS_INVENTORY,
+  // INVENTORY, INVENTORY_PO, KEUANGAN, FINANCE_EXPENSE, SHIFT, SETTINGS, SYSTEM
+  const moduleMap: { [key: string]: string[] } = {
+    SEMUA: [],
+    KASIR: ['POS', 'POS_SHIFT', 'POS_INVENTORY', 'SHIFT'],
+    INVENTARIS: ['INVENTORY', 'INVENTORY_PO'],
+    SHIFT: ['SHIFT', 'POS_SHIFT'],
+    KEUANGAN: ['KEUANGAN', 'FINANCE_EXPENSE', 'FINANCE'],
+    SISTEM: ['SYSTEM', 'SETTINGS'],
+    OFFLINE: ['OFFLINE_ENGINE']
   };
 
   const filteredLogs = logs.filter((log) => {
-    const targetMod = moduleMap[selectedModule];
-    const matchesModule = selectedModule === 'SEMUA' || log.module === targetMod || log.module === selectedModule;
+    const targets = moduleMap[selectedModule] || [];
+    const logModule = String(log.module || '').toUpperCase();
+    const matchesModule =
+      selectedModule === 'SEMUA' ||
+      targets.some((m) => logModule.includes(m) || m.includes(logModule));
     const matchesSearch =
       log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
       log.details.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -75,11 +80,11 @@ export const AuditLogViewer: React.FC = () => {
               <span>Audit Trail Ledger Keamanan & Aktivitas</span>
             </h2>
             <span className="text-[10px] bg-slate-200 text-slate-700 font-extrabold px-2 py-0.5 rounded-full">
-              Auto-prune 15 Hari
+              Riwayat 200 Log Terakhir
             </span>
           </div>
           <p className="text-xs text-slate-500 font-medium">
-            Rekaman log aktivitas kasir & stok. Log dibersihkan otomatis setelah <span className="font-bold text-slate-800">15 hari</span> untuk mencegah memori penuh.
+            Rekaman log aktivitas kasir, stok & keuangan. Menampilkan 200 entri terbaru dari cloud.
           </p>
         </div>
         <button

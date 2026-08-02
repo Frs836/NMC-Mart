@@ -354,9 +354,7 @@ app.post('/api/transactions/sync', (req, res) => {
         for (const item of tx.items) {
           const prodIndex = serverProducts.findIndex((p) => p.id === item.product.id || p.barcode === item.product.barcode);
           if (prodIndex !== -1) {
-            const currentStock = serverProducts[prodIndex].stock ?? 0;
-            const currentShelf = serverProducts[prodIndex].shelfStock ?? currentStock;
-            serverProducts[prodIndex].stock = Math.max(0, currentStock - item.quantity);
+            const currentShelf = serverProducts[prodIndex].shelfStock ?? serverProducts[prodIndex].stock ?? 0;
             serverProducts[prodIndex].shelfStock = Math.max(0, currentShelf - item.quantity);
           }
         }
@@ -704,6 +702,26 @@ app.post('/api/ai/insights', async (req, res) => {
       insights: null
     });
   }
+});
+
+// Root API Health Probe (Vercel rewrites /api/* to this function)
+app.get('/api', (_req, res) => {
+  res.json({
+    status: 'ok',
+    system: 'RetailFlow POS Server',
+    time: new Date().toISOString(),
+    routes: ['/api/health', '/api/products', '/api/transactions/sync', '/api/shifts/*', '/api/audit-logs', '/api/ai/status', '/api/ai/chat', '/api/ai/insights']
+  });
+});
+
+// Global Error Handler (mencegah 500 tanpa detail & agar error terlihat di serverless)
+app.use((err: any, _req: any, res: any, _next: any) => {
+  console.error('[Server Error]', err?.message || err);
+  res.status(err?.status || 500).json({
+    success: false,
+    error: err?.message || 'Internal Server Error',
+    stack: process.env.NODE_ENV === 'production' ? undefined : err?.stack
+  });
 });
 
 // Vite Middleware Integration

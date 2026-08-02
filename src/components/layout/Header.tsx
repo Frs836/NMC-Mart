@@ -125,7 +125,7 @@ export const Header: React.FC<HeaderProps> = ({
               <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
               <span className="font-bold text-slate-800 max-w-[50px] sm:max-w-none truncate">{currentUser.name.split(' ')[0]}</span>
               <span className="text-[9px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded-md font-extrabold uppercase shrink-0 hidden sm:inline">
-                {currentUser.role === 'OWNER' ? 'Pemilik' : currentUser.role === 'MANAGER' ? 'Manajer' : 'Kasir'}
+                {currentUser.role === 'OWNER' ? 'Pemilik' : currentUser.role === 'MANAGER' ? 'Manajer' : currentUser.role === 'MAINTENANCE' ? 'Maintenance' : 'Kasir'}
               </span>
             </button>
 
@@ -141,7 +141,7 @@ export const Header: React.FC<HeaderProps> = ({
                   </span>
                   <p className="font-extrabold text-slate-800 text-xs truncate">{currentUser.name}</p>
                   <span className="text-[10px] text-emerald-700 font-extrabold uppercase">
-                    Role: {currentUser.role === 'OWNER' ? 'Pemilik (Owner)' : currentUser.role === 'MANAGER' ? 'Manajer Toko' : 'Kasir Shift'}
+                    Role: {currentUser.role === 'OWNER' ? 'Pemilik (Owner)' : currentUser.role === 'MANAGER' ? 'Manajer Toko' : currentUser.role === 'MAINTENANCE' ? 'Maintenance' : 'Kasir Shift'}
                   </span>
                 </div>
 

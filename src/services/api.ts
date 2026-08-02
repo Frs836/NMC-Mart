@@ -153,12 +153,7 @@ export async function openShiftServer(cashierId: string, cashierName: string, op
 export async function getActiveShiftServer(branchId = 'default-branch-001'): Promise<Shift | null> {
   try {
     const shifts = await fetchShiftsFromCloud(branchId);
-    let openShift = shifts.find((s) => String(s.status).toUpperCase() === 'OPEN' && !s.endTime);
-
-    if (!openShift) {
-      const allShifts = await fetchShiftsFromCloud();
-      openShift = allShifts.find((s) => String(s.status).toUpperCase() === 'OPEN' && !s.endTime);
-    }
+    const openShift = shifts.find((s) => String(s.status).toUpperCase() === 'OPEN' && !s.endTime);
 
     if (openShift) {
       try {
@@ -182,6 +177,51 @@ export async function getActiveShiftServer(branchId = 'default-branch-001'): Pro
   } catch (e) {}
 
   return null;
+}
+
+/**
+ * Hitung rincian keuangan shift LANGSUNG dari cloud (sumber tunggal).
+ * Dipakai oleh CloseShiftModal (UI) dan closeShiftServer agar angkanya identik.
+ */
+export async function getShiftFinancialBreakdown(
+  shiftId: string,
+  openingCash = 0
+): Promise<{ cashSales: number; nonCashSales: number; totalExpenses: number; totalCashIn: number; expectedCash: number }> {
+  const client = getSupabaseClient();
+  let cashSales = 0;
+  let nonCashSales = 0;
+  let totalCashIn = 0;
+  let totalExpenseOut = 0;
+
+  if (client) {
+    try {
+      const { data: txsData } = await client
+        .from('transactions')
+        .select('grand_total, payment_method')
+        .eq('shift_id', shiftId);
+
+      (txsData || []).forEach((t: any) => {
+        if (t.payment_method === 'CASH') {
+          cashSales += Number(t.grand_total || 0);
+        } else {
+          nonCashSales += Number(t.grand_total || 0);
+        }
+      });
+
+      const { data: cmData } = await client
+        .from('cash_movements')
+        .select('amount, type')
+        .eq('shift_id', shiftId);
+
+      (cmData || []).forEach((m: any) => {
+        if (m.type === 'CASH_IN') totalCashIn += Number(m.amount || 0);
+        if (m.type === 'EXPENSE_OUT') totalExpenseOut += Number(m.amount || 0);
+      });
+    } catch (e) {}
+  }
+
+  const expectedCash = Number(openingCash || 0) + cashSales + totalCashIn - totalExpenseOut;
+  return { cashSales, nonCashSales, totalExpenses: totalExpenseOut, totalCashIn, expectedCash };
 }
 
 /**
@@ -209,36 +249,7 @@ export async function closeShiftServer(shiftId: string, actualClosingCash: numbe
   const branchId = shiftData?.branch_id || 'default-branch-001';
   const startTime = shiftData?.start_time || new Date().toISOString();
 
-  let cashSales = 0;
-  let totalCashIn = 0;
-  let totalExpenseOut = 0;
-
-  if (client) {
-    try {
-      const { data: txsData } = await client
-        .from('transactions')
-        .select('grand_total, payment_method')
-        .eq('shift_id', shiftId);
-
-      cashSales = (txsData || [])
-        .filter((t: any) => t.payment_method === 'CASH')
-        .reduce((sum: number, t: any) => sum + Number(t.grand_total || 0), 0);
-
-      const { data: cmData } = await client
-        .from('cash_movements')
-        .select('amount, type')
-        .eq('shift_id', shiftId);
-
-      totalCashIn = (cmData || [])
-        .filter((m: any) => m.type === 'CASH_IN')
-        .reduce((sum: number, m: any) => sum + Number(m.amount || 0), 0);
-
-      totalExpenseOut = (cmData || [])
-        .filter((m: any) => m.type === 'EXPENSE_OUT')
-        .reduce((sum: number, m: any) => sum + Number(m.amount || 0), 0);
-    } catch (e) {}
-  }
-
+  const { cashSales, totalCashIn, totalExpenses: totalExpenseOut } = await getShiftFinancialBreakdown(shiftId, openingCash);
   const expectedClosingCash = openingCash + cashSales + totalCashIn - totalExpenseOut;
   const cashDifference = actualClosingCash - expectedClosingCash;
 
@@ -504,6 +515,8 @@ export async function createPurchaseOrder(po: Omit<PurchaseOrder, 'id' | 'create
       total_amount: newPO.totalAmount,
       status: newPO.status,
       items: newPO.items,
+      created_by: newPO.createdBy || 'Manager',
+      notes: newPO.notes || null,
       created_at: newPO.createdAt
     });
   }

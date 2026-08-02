@@ -411,21 +411,17 @@ export async function syncTransactionToCloud(tx: Transaction): Promise<boolean> 
           const { data: dbProd } = await query.maybeSingle();
 
           const prodId = dbProd?.id || item.product.id;
-          const currentStock = dbProd && dbProd.stock !== null && dbProd.stock !== undefined
-            ? Number(dbProd.stock)
-            : Number(item.product.stock || 0);
-
           const currentShelf = dbProd && dbProd.shelf_stock !== null && dbProd.shelf_stock !== undefined
             ? Number(dbProd.shelf_stock)
-            : Number(item.product.shelfStock ?? currentStock);
+            : Number(item.product.shelfStock ?? item.product.stock ?? 0);
 
-          const newStock = Math.max(0, currentStock - item.quantity);
+          // Model stok: penjualan hanya mengurangi stok etalase (shelf_stock).
+          // Stok gudang (stock) hanya berkurang saat transfer gudang -> rak.
           const newShelfStock = Math.max(0, currentShelf - item.quantity);
 
           const { error: stockErr } = await supabaseClient
             .from('products')
             .update({
-              stock: newStock,
               shelf_stock: newShelfStock,
               updated_at: new Date().toISOString()
             })
@@ -434,7 +430,7 @@ export async function syncTransactionToCloud(tx: Transaction): Promise<boolean> 
           if (stockErr) {
             console.warn(`Failed to update stock for ${item.product.name}:`, stockErr.message);
           } else {
-            console.log(`✓ Stock deducted for ${item.product.name}: ${currentStock} -> ${newStock} (shelf: ${currentShelf} -> ${newShelfStock})`);
+            console.log(`✓ Shelf stock deducted for ${item.product.name}: ${currentShelf} -> ${newShelfStock}`);
           }
         } catch (e) {
           console.error(`Error updating stock for ${item.product.name}:`, e);
@@ -647,6 +643,25 @@ export async function syncCashMovementToCloud(m: CashMovement): Promise<boolean>
     return true;
   } catch (err) {
     console.warn('Cloud sync error for cash movement:', err);
+    return false;
+  }
+}
+
+/**
+ * Delete User Account from Supabase Cloud
+ */
+export async function deleteUserFromCloud(userId: string): Promise<boolean> {
+  if (!supabaseClient) return false;
+  try {
+    const { error } = await supabaseClient.from('users').delete().eq('id', userId);
+    if (error) {
+      console.warn('Supabase user delete warning:', error.message);
+      return false;
+    }
+    console.log('✓ User deleted from Supabase Cloud:', userId);
+    return true;
+  } catch (err) {
+    console.warn('Cloud delete error for user:', err);
     return false;
   }
 }
@@ -1240,7 +1255,6 @@ export async function purgeCloudStoreData(): Promise<boolean> {
       'transactions',
       'cash_movements',
       'shifts',
-      'audit_logs',
       'shelf_stock_transfers',
       'purchase_orders',
       'store_expenses',

@@ -63,15 +63,28 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
     if (!prod) return;
 
     const cost = unitCost > 0 ? unitCost : prod.purchasePrice;
-    const newItem = {
-      productId: prod.id,
-      productName: prod.name,
-      quantityOrdered: Number(orderQty) || 1,
-      unitCost: cost,
-      totalCost: (Number(orderQty) || 1) * cost
-    };
+    const addQty = Number(orderQty) || 1;
 
-    setPoItems((prev) => [...prev.filter((i) => i.productId !== prod.id), newItem]);
+    setPoItems((prev) => {
+      const existing = prev.find((i) => i.productId === prod.id);
+      if (existing) {
+        return prev.map((i) => {
+          if (i.productId !== prod.id) return i;
+          const qty = i.quantityOrdered + addQty;
+          return { ...i, quantityOrdered: qty, totalCost: qty * i.unitCost };
+        });
+      }
+      return [
+        ...prev,
+        {
+          productId: prod.id,
+          productName: prod.name,
+          quantityOrdered: addQty,
+          unitCost: cost,
+          totalCost: addQty * cost
+        }
+      ];
+    });
     setSelectedProductId('');
     setOrderQty(10);
     setUnitCost(0);
@@ -230,7 +243,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                         })
                         .map((p) => (
                           <option key={p.id} value={p.id}>
-                            {p.name} — Rp {p.purchasePrice ? p.purchasePrice.toLocaleString('id-ID') : 0} (Stok: {p.stock} {p.unit || 'pcs'})
+                            {p.name} — Rp {p.purchasePrice ? p.purchasePrice.toLocaleString('id-ID') : 0} (Stok: {p.stock} pcs)
                           </option>
                         ))}
                     </select>

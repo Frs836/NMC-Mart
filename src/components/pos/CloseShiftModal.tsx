@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LogOut, Lock, ShieldAlert, DollarSign, Wallet, CreditCard, ArrowDownRight, ArrowUpRight } from 'lucide-react';
-import { closeShiftServer, logAudit } from '../../services/api';
+import { closeShiftServer, logAudit, getShiftFinancialBreakdown } from '../../services/api';
 import { formatCurrency } from '../../utils/formatters';
-import { fetchTransactionsFromCloud, fetchCashMovementsFromCloud } from '../../services/supabase';
 import { User } from '../../types';
 
 interface CloseShiftModalProps {
@@ -34,48 +33,15 @@ export const CloseShiftModal: React.FC<CloseShiftModalProps> = ({
     async function calculateShiftTotals() {
       if (!activeShift) return;
       try {
-        const [cloudTxs, cloudMovements] = await Promise.all([
-          fetchTransactionsFromCloud(activeShift.branchId),
-          fetchCashMovementsFromCloud(activeShift.branchId)
-        ]);
+        // Sumber tunggal = query cloud (shift_id) yang identik dengan closeShiftServer
+        const breakdown = await getShiftFinancialBreakdown(activeShift.id, activeShift.openingCash || 0);
 
-        const startTime = new Date(activeShift.startTime).getTime();
-
-        const shiftTxs = cloudTxs.filter((t) => {
-          if (t.shiftId === activeShift.id) return true;
-          return new Date(t.createdAt).getTime() >= startTime;
-        });
-
-        let cSales = 0;
-        let ncSales = 0;
-        shiftTxs.forEach((t) => {
-          if (t.paymentMethod === 'CASH') {
-            cSales += t.grandTotal || 0;
-          } else {
-            ncSales += t.grandTotal || 0;
-          }
-        });
-
-        const shiftMovements = cloudMovements.filter((m) => {
-          if (m.shiftId === activeShift.id) return true;
-          return new Date(m.createdAt).getTime() >= startTime;
-        });
-
-        let exp = 0;
-        let cin = 0;
-        shiftMovements.forEach((m) => {
-          if (m.type === 'EXPENSE_OUT') exp += m.amount || 0;
-          if (m.type === 'CASH_IN') cin += m.amount || 0;
-        });
-
-        const calcExpected = (activeShift.openingCash || 0) + cSales + cin - exp;
-
-        setCashSales(cSales);
-        setNonCashSales(ncSales);
-        setTotalExpenses(exp);
-        setTotalCashIn(cin);
-        setExpectedCash(calcExpected);
-        setActualClosingCash(calcExpected);
+        setCashSales(breakdown.cashSales);
+        setNonCashSales(breakdown.nonCashSales);
+        setTotalExpenses(breakdown.totalExpenses);
+        setTotalCashIn(breakdown.totalCashIn);
+        setExpectedCash(breakdown.expectedCash);
+        setActualClosingCash(breakdown.expectedCash);
       } catch (err) {
         console.warn('Error calculating shift breakdown:', err);
       }
@@ -117,7 +83,15 @@ export const CloseShiftModal: React.FC<CloseShiftModalProps> = ({
       return;
     }
 
-    const closed = await closeShiftServer(activeShift.id, actualClosingCash, notes);
+    let closed: any = null;
+    try {
+      closed = await closeShiftServer(activeShift.id, actualClosingCash, notes);
+    } catch (e: any) {
+      console.error('Gagal menutup shift:', e);
+      setErrorMessage(e?.message || 'Gagal menutup shift di cloud. Periksa koneksi dan coba lagi.');
+      return;
+    }
+
     await logAudit(
       'TUTUP_SHIFT',
       'SHIFT',

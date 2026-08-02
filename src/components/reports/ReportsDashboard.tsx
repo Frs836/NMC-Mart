@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, Award, AlertTriangle, Printer, Download, Database, Calendar, Filter, Wallet, Package, Clock, User, ShieldCheck, DollarSign, CheckCircle2 } from 'lucide-react';
 import { Transaction, Product, UserRole, CashMovement, Shift } from '../../types';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, toLocalDateKey } from '../../utils/formatters';
 import { fetchCashMovementsFromCloud, fetchTransactionsFromCloud, fetchShiftsFromCloud, fetchProductsFromDatabase } from '../../services/supabase';
 
 interface ReportsDashboardProps {
   userRole?: UserRole;
+  activeBranch?: any;
 }
 
-export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = 'MANAGER' }) => {
+export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = 'MANAGER', activeBranch }) => {
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -22,9 +23,9 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
   const [startDate, setStartDate] = useState<string>(() => {
     const d = new Date();
     d.setDate(d.getDate() - 7);
-    return d.toISOString().slice(0, 10);
+    return toLocalDateKey(d);
   });
-  const [endDate, setEndDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState<string>(() => toLocalDateKey(new Date()));
 
   // Selected Shift ID
   const [selectedShiftId, setSelectedShiftId] = useState<string>('ALL');
@@ -35,11 +36,12 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
 
   const loadData = async () => {
     try {
+      const branchId = activeBranch?.id || 'default-branch-001';
       const [cloudTxs, cloudCms, cloudShifts, cloudProds] = await Promise.all([
-        fetchTransactionsFromCloud(),
-        fetchCashMovementsFromCloud(),
-        fetchShiftsFromCloud(),
-        fetchProductsFromDatabase('default-branch-001')
+        fetchTransactionsFromCloud(branchId),
+        fetchCashMovementsFromCloud(branchId),
+        fetchShiftsFromCloud(branchId),
+        fetchProductsFromDatabase(branchId)
       ]);
 
       setAllTransactions(cloudTxs || []);

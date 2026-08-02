@@ -27,6 +27,14 @@ export const StockPurchaseModal: React.FC<StockPurchaseModalProps> = ({
   const handleSavePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProduct) return;
+    if (!Number.isFinite(inboundQty) || inboundQty <= 0) {
+      alert('Jumlah stok masuk harus lebih dari 0.');
+      return;
+    }
+    if (!Number.isFinite(unitCost) || unitCost < 0) {
+      alert('Harga beli per unit tidak boleh negatif.');
+      return;
+    }
 
     const newStock = selectedProduct.stock + inboundQty;
     const updated = {
@@ -94,6 +102,7 @@ export const StockPurchaseModal: React.FC<StockPurchaseModalProps> = ({
               type="number"
               value={inboundQty}
               onChange={(e) => setInboundQty(Number(e.target.value))}
+              min={1}
               required
               className="w-full bg-[#eef2f6] text-emerald-800 font-black text-xl p-3 rounded-2xl shadow-[inset_2px_2px_4px_#cbd2d9] border-none focus:outline-none"
             />

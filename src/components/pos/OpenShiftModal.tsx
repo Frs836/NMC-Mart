@@ -20,6 +20,7 @@ export const OpenShiftModal: React.FC<OpenShiftModalProps> = ({
   const [openingCash, setOpeningCash] = useState<number>(100000); // Default Rp 100.000
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -39,20 +40,26 @@ export const OpenShiftModal: React.FC<OpenShiftModalProps> = ({
   const handleOpenShift = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
+    if (!Number.isFinite(openingCash) || openingCash < 0) {
+      setErrorMessage('Kas awal tidak boleh negatif.');
+      return;
+    }
+    setErrorMessage('');
     setIsSubmitting(true);
     try {
       const shift = await openShiftServer(currentUser.id, cashierName, openingCash, activeBranch?.id || 'default-branch-001');
       await logAudit(
         'BUKA_SHIFT',
         'SHIFT',
-        `Kasir ${cashierName} membuka shift dengan kas awal ${formatCurrency(openingCash)}`,
+        `Kasir ${cashierName} membuka shift dengan kas awal ${formatCurrency(openingCash)}${notes ? '. Catatan: ' + notes : ''}`,
         cashierName,
         currentUser.id
       );
       setActiveShift(shift);
       onClose();
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error opening shift:', e);
+      setErrorMessage(e?.message || 'Gagal membuka shift. Periksa koneksi dan coba lagi.');
     } finally {
       setIsSubmitting(false);
     }
@@ -68,6 +75,12 @@ export const OpenShiftModal: React.FC<OpenShiftModalProps> = ({
           <LogIn className="w-5 h-5" />
           <h3 className="font-extrabold text-base text-slate-800">Buka Shift Kasir Baru</h3>
         </div>
+
+        {errorMessage && (
+          <div className="p-3 bg-rose-100 border border-rose-300 rounded-2xl text-rose-800 text-xs font-bold">
+            {errorMessage}
+          </div>
+        )}
 
         <div className="space-y-3.5 text-xs">
           <div>

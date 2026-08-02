@@ -235,7 +235,20 @@ export function useAppStore() {
     }
   };
 
-  const [isMultiBranchEnabled, setIsMultiBranchEnabled] = useState<boolean>(false);
+  const [isMultiBranchEnabled, setIsMultiBranchEnabledState] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('minimarket_multi_branch_v1') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+
+  const setIsMultiBranchEnabled = (val: boolean) => {
+    setIsMultiBranchEnabledState(val);
+    try {
+      localStorage.setItem('minimarket_multi_branch_v1', String(val));
+    } catch (e) {}
+  };
   const [activeShift, setActiveShiftState] = useState<Shift | null>(() => {
     try {
       const saved = localStorage.getItem('minimarket_active_shift_v1');

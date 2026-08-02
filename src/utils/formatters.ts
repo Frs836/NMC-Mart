@@ -1,9 +1,11 @@
 export function formatCurrency(amount: number): string {
+  const value = Number(amount);
+  if (!Number.isFinite(value)) return 'Rp 0';
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
     maximumFractionDigits: 0
-  }).format(amount);
+  }).format(value);
 }
 
 export function formatDate(dateString: string): string {
@@ -52,5 +54,44 @@ export function generateUUID(): string {
 }
 
 export function generateBarcode(): string {
-  return '899' + Math.floor(100000000 + Math.random() * 900000000).toString();
+  const digits = '899' + Math.floor(100000000 + Math.random() * 900000000).toString();
+  let sum = 0;
+  for (let i = 0; i < digits.length; i++) {
+    sum += Number(digits[i]) * (i % 2 === 0 ? 1 : 3);
+  }
+  const check = (10 - (sum % 10)) % 10;
+  return digits + check;
+}
+
+export function isSameLocalDay(dateStr: string, targetDate: Date): boolean {
+  if (!dateStr) return false;
+  try {
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return false;
+    return (
+      d.getFullYear() === targetDate.getFullYear() &&
+      d.getMonth() === targetDate.getMonth() &&
+      d.getDate() === targetDate.getDate()
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function isSameLocalMonth(dateStr: string, targetDate: Date): boolean {
+  if (!dateStr) return false;
+  try {
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return false;
+    return d.getFullYear() === targetDate.getFullYear() && d.getMonth() === targetDate.getMonth();
+  } catch {
+    return false;
+  }
+}
+
+export function toLocalDateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }

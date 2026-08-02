@@ -33,6 +33,7 @@ const playAlertChime = (isUrgent: boolean) => {
 
     osc.start();
     osc.stop(ctx.currentTime + (isUrgent ? 0.4 : 0.25));
+    osc.onended = () => ctx.close().catch(() => {});
   } catch (e) {
     console.warn('Audio play error:', e);
   }

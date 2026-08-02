@@ -39,7 +39,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['OWNER', 'MANAGER', 'MAINTENANCE'] },
     { id: 'pos', label: 'Kasir POS', icon: ShoppingBag, roles: ['OWNER', 'MANAGER', 'CASHIER', 'MAINTENANCE'] },
     { id: 'inventory', label: 'Inventaris', icon: Package, roles: ['OWNER', 'MANAGER', 'MAINTENANCE'] },
-    { id: 'finance', label: 'Keuangan', icon: Wallet, roles: ['OWNER', 'MANAGER', 'CASHIER', 'MAINTENANCE'] },
+    { id: 'finance', label: 'Keuangan', icon: Wallet, roles: ['OWNER', 'MANAGER', 'MAINTENANCE'] },
     { id: 'reports', label: 'Laporan', icon: BarChart3, roles: ['OWNER', 'MANAGER', 'MAINTENANCE'] },
     { id: 'audit', label: 'Log Audit', icon: ShieldAlert, roles: ['OWNER', 'MANAGER', 'MAINTENANCE'] },
     { id: 'settings', label: 'Pengaturan', icon: Settings, roles: ['OWNER', 'MANAGER', 'MAINTENANCE'] }

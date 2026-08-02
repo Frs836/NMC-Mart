@@ -72,16 +72,27 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({ isOpen, on
 
   const checkApiConnection = async () => {
     setIsCheckingStatus(true);
-    const status = await fetchAIStatus();
-    setApiStatus(status);
-    setIsCheckingStatus(false);
+    try {
+      const status = await fetchAIStatus();
+      setApiStatus(status);
+    } catch (e) {
+      console.warn('Gagal cek status AI:', e);
+      setApiStatus(null);
+    } finally {
+      setIsCheckingStatus(false);
+    }
   };
 
   const loadInsights = async () => {
     setLoading(true);
-    const data = await fetchAIInsights();
-    setInsights(data);
-    setLoading(false);
+    try {
+      const data = await fetchAIInsights();
+      setInsights(data);
+    } catch (e) {
+      console.warn('Gagal memuat insight AI:', e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSendMessage = async (textToSend?: string) => {
@@ -98,9 +109,15 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({ isOpen, on
       parts: [{ text: m.text }]
     }));
 
-    const aiReply = await sendAIChatMessage(query, historyForAi);
-    setChatMessages((prev) => [...prev, { sender: 'ai', text: aiReply }]);
-    setIsSending(false);
+    try {
+      const aiReply = await sendAIChatMessage(query, historyForAi);
+      setChatMessages((prev) => [...prev, { sender: 'ai', text: aiReply }]);
+    } catch (e) {
+      console.warn('Gagal mengirim pesan AI:', e);
+      setChatMessages((prev) => [...prev, { sender: 'ai', text: 'Maaf, terjadi gangguan saat menghubungi asisten AI. Silakan coba lagi.' }]);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   if (!isOpen) return null;

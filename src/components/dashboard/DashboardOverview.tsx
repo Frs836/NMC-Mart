@@ -21,7 +21,7 @@ import {
   Check
 } from 'lucide-react';
 import { Product, Transaction, Shift, UserRole, SalesTarget, CashMovement } from '../../types';
-import { formatCurrency, formatDate } from '../../utils/formatters';
+import { formatCurrency, formatDate, isSameLocalDay, isSameLocalMonth } from '../../utils/formatters';
 import { ReceiptModal } from '../pos/ReceiptModal';
 import { getSalesTargets, saveSalesTarget, logAudit } from '../../services/api';
 import { fetchProductsFromDatabase, fetchTransactionsFromCloud, fetchCashMovementsFromCloud, syncCashMovementToCloud } from '../../services/supabase';
@@ -79,38 +79,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
       const isCompleted = (status?: string) => !status || String(status).toUpperCase() === 'COMPLETED';
-      const isSameDay = (dateStr: string, targetDate: Date) => {
-        if (!dateStr) return false;
-        try {
-          const d = new Date(dateStr);
-          return (
-            d.getFullYear() === targetDate.getFullYear() &&
-            d.getMonth() === targetDate.getMonth() &&
-            d.getDate() === targetDate.getDate()
-          );
-        } catch (e) {
-          return dateStr.startsWith(targetDate.toISOString().slice(0, 10));
-        }
-      };
 
-      const isSameMonth = (dateStr: string, targetDate: Date) => {
-        if (!dateStr) return false;
-        try {
-          const d = new Date(dateStr);
-          return (
-            d.getFullYear() === targetDate.getFullYear() &&
-            d.getMonth() === targetDate.getMonth()
-          );
-        } catch (e) {
-          return dateStr.startsWith(targetDate.toISOString().slice(0, 7));
-        }
-      };
-
-      const filteredToday = allTx.filter((t) => isSameDay(t.createdAt, now) && isCompleted(t.status));
+      const filteredToday = allTx.filter((t) => isSameLocalDay(t.createdAt, now) && isCompleted(t.status));
       setTodayTransactions(filteredToday);
 
       // Calculate monthly revenue and profit
-      const monthTx = allTx.filter((t) => isSameMonth(t.createdAt, now) && isCompleted(t.status));
+      const monthTx = allTx.filter((t) => isSameLocalMonth(t.createdAt, now) && isCompleted(t.status));
       const mRev = monthTx.reduce((acc, t) => acc + t.grandTotal, 0);
       let mCogs = 0;
       monthTx.forEach((tx) => {
@@ -413,21 +387,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
       {/* Arus Kas Hari Ini (Kas In & Kas Out) Summary Widget */}
       {(() => {
-        const isSameDay = (dateStr: string, targetDate: Date) => {
-          if (!dateStr) return false;
-          try {
-            const d = new Date(dateStr);
-            return (
-              d.getFullYear() === targetDate.getFullYear() &&
-              d.getMonth() === targetDate.getMonth() &&
-              d.getDate() === targetDate.getDate()
-            );
-          } catch (e) {
-            return dateStr.startsWith(targetDate.toISOString().slice(0, 10));
-          }
-        };
-
-        const todayMovements = cashMovements.filter((m) => isSameDay(m.createdAt, today));
+        const todayMovements = cashMovements.filter((m) => isSameLocalDay(m.createdAt, today));
         const totalCashInToday = todayMovements.filter((m) => m.type === 'CASH_IN').reduce((acc, m) => acc + m.amount, 0);
         const totalCashOutToday = todayMovements.filter((m) => m.type === 'EXPENSE_OUT').reduce((acc, m) => acc + m.amount, 0);
         const netCashflowToday = totalCashInToday - totalCashOutToday;

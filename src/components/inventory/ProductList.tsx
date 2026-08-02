@@ -38,8 +38,13 @@ export const ProductList: React.FC<ProductListProps> = ({ userRole, activeBranch
   }, [activeBranch]);
 
   const loadProducts = async () => {
-    const list = await fetchServerProducts(activeBranch.id);
-    setProducts(list);
+    try {
+      const list = await fetchServerProducts(activeBranch.id);
+      setProducts(list);
+    } catch (err) {
+      console.error('Gagal memuat produk:', err);
+      alert('Gagal memuat katalog produk. Periksa koneksi internet dan coba lagi.');
+    }
   };
 
   // Dynamically extract all unique categories from products list
@@ -113,18 +118,28 @@ export const ProductList: React.FC<ProductListProps> = ({ userRole, activeBranch
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
 
   const handleSaveProduct = async (productData: Partial<Product>) => {
-    await saveProduct(productData, currentUser.name);
-    setIsProductFormOpen(false);
-    setEditingProduct(null);
-    loadProducts();
+    try {
+      await saveProduct(productData, currentUser.name);
+      setIsProductFormOpen(false);
+      setEditingProduct(null);
+      loadProducts();
+    } catch (err) {
+      console.error('Gagal menyimpan produk:', err);
+      alert('Gagal menyimpan produk ke cloud. Periksa koneksi dan coba lagi.');
+    }
   };
 
   const handleDeleteProduct = async (productId: string) => {
-    await deleteProduct(productId, currentUser.name);
-    setDeletingProduct(null);
-    setIsProductFormOpen(false);
-    setEditingProduct(null);
-    loadProducts();
+    try {
+      await deleteProduct(productId, currentUser.name);
+      setDeletingProduct(null);
+      setIsProductFormOpen(false);
+      setEditingProduct(null);
+      loadProducts();
+    } catch (err) {
+      console.error('Gagal menghapus produk:', err);
+      alert('Gagal menghapus produk dari cloud. Periksa koneksi dan coba lagi.');
+    }
   };
 
   return (
