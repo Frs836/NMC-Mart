@@ -548,6 +548,31 @@ export function useAppStore() {
     });
   };
 
+  // Set quantity absolut dari input manual (keyboard)
+  const setCartQuantity = (productId: string, newQty: number) => {
+    const qty = Math.max(1, Math.floor(Number(newQty) || 1));
+    setCartItems((prev) => {
+      return prev
+        .map((item) => {
+          if (item.product.id === productId) {
+            const availableStock = item.product.shelfStock ?? item.product.stock;
+            if (qty > availableStock) {
+              alert(`Jumlah melebihi stok etalase yang tersedia (${availableStock} unit)`);
+              return item;
+            }
+            const subtotal = qty * item.product.sellingPrice - item.discountAmount;
+            return {
+              ...item,
+              quantity: qty,
+              subtotal: Math.max(0, subtotal)
+            };
+          }
+          return item;
+        })
+        .filter(Boolean) as CartItem[];
+    });
+  };
+
   const setCartItemDiscount = (productId: string, discountAmount: number) => {
     setCartItems((prev) =>
       prev.map((item) => {
@@ -649,6 +674,7 @@ export function useAppStore() {
     deleteHeldCart,
     addToCart,
     updateCartQuantity,
+    setCartQuantity,
     setCartItemDiscount,
     removeFromCart,
     clearCart,

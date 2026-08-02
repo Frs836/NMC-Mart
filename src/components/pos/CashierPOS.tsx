@@ -44,6 +44,7 @@ interface CashierPOSProps {
   deleteHeldCart: (id: string) => void;
   addToCart: (product: Product, quantity?: number) => void;
   updateCartQuantity: (productId: string, delta: number) => void;
+  setCartQuantity: (productId: string, newQty: number) => void;
   removeFromCart: (productId: string) => void;
   clearCart: () => void;
   cartSubtotal: number;
@@ -68,6 +69,7 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
   deleteHeldCart,
   addToCart,
   updateCartQuantity,
+  setCartQuantity,
   removeFromCart,
   clearCart,
   cartSubtotal,
@@ -291,22 +293,37 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
               </p>
             </div>
 
-            {/* Quantity Controls */}
-            <div className="flex items-center gap-1 bg-[#eef2f6] shadow-[inset_2px_2px_4px_#cbd2d9,inset_-2px_-2px_4px_#ffffff] rounded-xl p-1">
-              <button
-                onClick={() => updateCartQuantity(item.product.id, -1)}
-                className="w-6 h-6 rounded-lg bg-[#eef2f6] shadow-[2px_2px_4px_#cbd2d9] text-slate-800 flex items-center justify-center font-bold text-xs"
-              >
-                -
-              </button>
-              <span className="w-6 text-center font-black text-xs text-slate-800">{item.quantity}</span>
-              <button
-                onClick={() => updateCartQuantity(item.product.id, 1)}
-                className="w-6 h-6 rounded-lg bg-[#eef2f6] shadow-[2px_2px_4px_#cbd2d9] text-slate-800 flex items-center justify-center font-bold text-xs"
-              >
-                +
-              </button>
-            </div>
+                    {/* Quantity Controls - angka bisa diedit manual */}
+                    <div className="flex items-center gap-1 bg-[#eef2f6] shadow-[inset_2px_2px_4px_#cbd2d9,inset_-2px_-2px_4px_#ffffff] rounded-xl p-1">
+                      <button
+                        onClick={() => updateCartQuantity(item.product.id, -1)}
+                        className="w-6 h-6 rounded-lg bg-[#eef2f6] shadow-[2px_2px_4px_#cbd2d9] text-slate-800 flex items-center justify-center font-bold text-xs"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={1}
+                        max={item.product.shelfStock ?? item.product.stock}
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === '' || v === '-') return;
+                          setCartQuantity(item.product.id, Number(v));
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                        }}
+                        className="w-12 text-center font-black text-sm text-slate-800 bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-emerald-500 rounded-lg [-moz-appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <button
+                        onClick={() => updateCartQuantity(item.product.id, 1)}
+                        className="w-6 h-6 rounded-lg bg-[#eef2f6] shadow-[2px_2px_4px_#cbd2d9] text-slate-800 flex items-center justify-center font-bold text-xs"
+                      >
+                        +
+                      </button>
+                    </div>
 
             <button
               onClick={() => removeFromCart(item.product.id)}

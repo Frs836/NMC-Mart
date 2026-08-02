@@ -56,6 +56,7 @@ export function App() {
     deleteHeldCart,
     addToCart,
     updateCartQuantity,
+    setCartQuantity,
     removeFromCart,
     clearCart,
     cartSubtotal,
@@ -144,6 +145,7 @@ export function App() {
             deleteHeldCart={deleteHeldCart}
             addToCart={addToCart}
             updateCartQuantity={updateCartQuantity}
+            setCartQuantity={setCartQuantity}
             removeFromCart={removeFromCart}
             clearCart={clearCart}
             cartSubtotal={cartSubtotal}
