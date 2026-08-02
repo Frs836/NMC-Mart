@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Package, Plus, Search, Edit2, Trash2, Layers, ArrowUpRight, AlertTriangle, Filter, CheckCircle, Truck } from 'lucide-react';
+import { Package, Plus, Search, Edit2, Trash2, Layers, ArrowUpRight, AlertTriangle, Filter, CheckCircle, Truck, PackagePlus } from 'lucide-react';
 import { Product, UserRole } from '../../types';
 import { formatCurrency, formatShortDate } from '../../utils/formatters';
 import { fetchServerProducts, saveProduct, deleteProduct } from '../../services/api';
@@ -7,6 +7,8 @@ import { ProductFormModal } from './ProductFormModal';
 import { StockOpnameModal } from './StockOpnameModal';
 import { StockPurchaseModal } from './StockPurchaseModal';
 import { PurchaseOrderModal } from './PurchaseOrderModal';
+import { VariantBundleManager } from './VariantBundleManager';
+import { RakitBundleModal } from './RakitBundleModal';
 
 interface ProductListProps {
   userRole: UserRole;
@@ -23,6 +25,8 @@ export const ProductList: React.FC<ProductListProps> = ({ userRole, activeBranch
   // Modal States
   const [isProductFormOpen, setIsProductFormOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [variantBundleTarget, setVariantBundleTarget] = useState<Product | null>(null);
+  const [isRakitOpen, setIsRakitOpen] = useState(false);
 
   const [isStockOpnameOpen, setIsStockOpnameOpen] = useState(false);
   const [isStockPurchaseOpen, setIsStockPurchaseOpen] = useState(false);
@@ -66,6 +70,8 @@ export const ProductList: React.FC<ProductListProps> = ({ userRole, activeBranch
   };
 
   const filteredProducts = products.filter((p) => {
+    if (p.sourceProductId) return false; // varian dikelola lewat produk induk
+
     const pCat = p.category ? String(p.category).trim().toLowerCase() : '';
     const selCat = selectedCategory.trim().toLowerCase();
     const matchesCat =
@@ -165,6 +171,13 @@ export const ProductList: React.FC<ProductListProps> = ({ userRole, activeBranch
             >
               <Truck className="w-4 h-4 text-indigo-600" />
               <span>PO Supplier</span>
+            </button>
+            <button
+              onClick={() => setIsRakitOpen(true)}
+              className="flex-1 md:flex-initial bg-[#eef2f6] text-slate-700 px-3.5 py-2.5 rounded-2xl text-xs font-extrabold shadow-[4px_4px_8px_#cbd2d9,-4px_-4px_8px_#ffffff] active:shadow-[inset_2px_2px_4px_#cbd2d9] transition-all flex items-center justify-center gap-1.5"
+            >
+              <PackagePlus className="w-4 h-4 text-emerald-600" />
+              <span>Rakit Paket</span>
             </button>
             <button
               onClick={() => setIsStockPurchaseOpen(true)}
@@ -352,6 +365,13 @@ export const ProductList: React.FC<ProductListProps> = ({ userRole, activeBranch
                         {(userRole === 'OWNER' || userRole === 'MANAGER') && (
                           <div className="flex items-center justify-end gap-1.5">
                             <button
+                              onClick={() => setVariantBundleTarget(p)}
+                              className="p-2 bg-[#eef2f6] text-indigo-600 hover:text-indigo-900 rounded-xl shadow-[2px_2px_4px_#cbd2d9,-2px_-2px_4px_#ffffff] active:shadow-[inset_1px_1px_2px_#cbd2d9]"
+                              title="Kelola Varian & Paket (mis. Matang)"
+                            >
+                              <Layers className="w-3.5 h-3.5" />
+                            </button>
+                            <button
                               onClick={() => {
                                 setEditingProduct(p);
                                 setIsProductFormOpen(true);
@@ -406,6 +426,13 @@ export const ProductList: React.FC<ProductListProps> = ({ userRole, activeBranch
                     {(userRole === 'OWNER' || userRole === 'MANAGER') && (
                       <div className="flex items-center gap-1.5">
                         <button
+                          onClick={() => setVariantBundleTarget(p)}
+                          className="p-2.5 bg-[#eef2f6] text-indigo-700 rounded-xl shadow-[2px_2px_4px_#cbd2d9,-2px_-2px_4px_#ffffff] active:shadow-[inset_1px_1px_2px_#cbd2d9]"
+                          title="Kelola Varian & Paket"
+                        >
+                          <Layers className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => {
                             setEditingProduct(p);
                             setIsProductFormOpen(true);
@@ -456,6 +483,7 @@ export const ProductList: React.FC<ProductListProps> = ({ userRole, activeBranch
           product={editingProduct}
           availableCategories={mergedCategories}
           existingBarcodes={products.map((p) => p.barcode).filter(Boolean)}
+          allProducts={products}
           onSave={handleSaveProduct}
           onDelete={handleDeleteProduct}
           onClose={() => {
@@ -529,6 +557,26 @@ export const ProductList: React.FC<ProductListProps> = ({ userRole, activeBranch
         userRole={userRole}
         onStockUpdated={loadProducts}
       />
+
+      {/* Kelola Varian & Paket */}
+      {variantBundleTarget && (
+        <VariantBundleManager
+          product={variantBundleTarget}
+          allProducts={products}
+          onClose={() => setVariantBundleTarget(null)}
+          onDone={loadProducts}
+        />
+      )}
+
+      {/* Rakit Paket / Bundle */}
+      {isRakitOpen && (
+        <RakitBundleModal
+          products={products}
+          currentUser={currentUser}
+          onClose={() => setIsRakitOpen(false)}
+          onDone={loadProducts}
+        />
+      )}
     </div>
   );
 };

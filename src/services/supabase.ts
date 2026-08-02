@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ENV_CONFIG, isSupabaseConfigured } from '../config/env';
-import { Product, Transaction, Shift, AuditLog, Branch, User, CashMovement, ShelfStockTransfer, TeamMessage, Refund } from '../types';
+import { Product, Transaction, Shift, AuditLog, Branch, User, CashMovement, ShelfStockTransfer, TeamMessage, Refund, BundleComponent } from '../types';
 import { INITIAL_PRODUCTS } from '../db/seed';
 
 let supabaseClient: SupabaseClient | null = null;
@@ -222,6 +222,8 @@ export async function syncProductToCloud(product: Product): Promise<boolean> {
       min_stock: product.minStock || 5,
       is_active: product.isAvailable ?? true,
       branch_id: product.branchId || null,
+      source_product_id: product.sourceProductId || null,
+      is_bundle: Boolean(product.isBundle),
       updated_at: new Date().toISOString()
     }, { onConflict: 'id' });
 
@@ -402,16 +404,18 @@ export async function syncTransactionToCloud(tx: Transaction): Promise<boolean> 
         if (!item.product || (!item.product.id && !item.product.barcode)) continue;
 
         try {
+          // Varian (mis. matang) mengurangi stok produk sumber (mentah)
+          const deductId = item.product.sourceProductId || item.product.id;
           let query = supabaseClient.from('products').select('id, stock, shelf_stock');
-          if (item.product.id) {
-            query = query.eq('id', item.product.id);
+          if (deductId) {
+            query = query.eq('id', deductId);
           } else if (item.product.barcode) {
             query = query.eq('barcode', item.product.barcode);
           }
 
           const { data: dbProd } = await query.maybeSingle();
 
-          const prodId = dbProd?.id || item.product.id;
+          const prodId = dbProd?.id || deductId;
           const currentShelf = dbProd && dbProd.shelf_stock !== null && dbProd.shelf_stock !== undefined
             ? Number(dbProd.shelf_stock)
             : Number(item.product.shelfStock ?? item.product.stock ?? 0);
@@ -755,11 +759,13 @@ export async function restockShelfOnRefund(items: { productId: string; quantity:
     try {
       const { data: dbProd } = await supabaseClient
         .from('products')
-        .select('id, shelf_stock')
+        .select('id, shelf_stock, source_product_id')
         .eq('id', item.productId)
         .maybeSingle();
 
-      const prodId = dbProd?.id || item.productId;
+      // Varian (mis. matang) restock ke produk sumber (mentah)
+      const targetId = dbProd?.source_product_id || dbProd?.id || item.productId;
+      const prodId = targetId;
       const currentShelf = dbProd && dbProd.shelf_stock !== null && dbProd.shelf_stock !== undefined
         ? Number(dbProd.shelf_stock)
         : 0;
@@ -783,6 +789,156 @@ export async function restockShelfOnRefund(items: { productId: string; quantity:
 }
 
 /**
+ * Ambil varian penjualan (mis. matang) milik produk sumber
+ */
+export async function fetchVariantsForProduct(sourceId: string): Promise<Product[]> {
+  if (!supabaseClient || !sourceId) return [];
+  try {
+    const { data, error } = await supabaseClient
+      .from('products')
+      .select('*')
+      .eq('source_product_id', sourceId)
+      .order('created_at', { ascending: true });
+
+    if (!error && data) {
+      return data.map((d: any) => ({
+        id: d.id,
+        branchId: d.branch_id || 'default-branch-001',
+        barcode: d.barcode || '',
+        name: d.name,
+        brand: d.brand || '',
+        category: d.category || 'Lainnya',
+        description: d.description || '',
+        purchasePrice: Number(d.purchase_price || 0),
+        sellingPrice: Number(d.selling_price || 0),
+        taxPercent: Number(d.tax_percent || 0),
+        stock: Number(d.stock || 0),
+        shelfStock: Number(d.shelf_stock ?? d.stock ?? 0),
+        minStock: Number(d.min_stock || 0),
+        expiryDate: d.expiry_date || '',
+        supplierName: d.supplier_name || '',
+        isAvailable: Boolean(d.is_active),
+        sourceProductId: d.source_product_id || undefined,
+        createdAt: d.created_at || new Date().toISOString(),
+        updatedAt: d.updated_at || new Date().toISOString()
+      }));
+    }
+  } catch (err) {
+    console.warn('Error fetching variants:', err);
+  }
+  return [];
+}
+
+/**
+ * Ambil komponen bundle (dengan nama produk)
+ */
+export async function fetchBundleComponents(bundleId: string): Promise<BundleComponent[]> {
+  if (!supabaseClient || !bundleId) return [];
+  try {
+    const { data, error } = await supabaseClient
+      .from('bundle_components')
+      .select('*')
+      .eq('bundle_id', bundleId)
+      .order('created_at', { ascending: true });
+
+    if (!error && data) {
+      const comps: BundleComponent[] = data.map((d: any) => ({
+        id: d.id,
+        bundleId: d.bundle_id,
+        productId: d.product_id,
+        quantity: Number(d.quantity || 1),
+        createdAt: d.created_at
+      }));
+
+      // Lampirkan nama produk
+      const ids = comps.map((c) => c.productId).filter(Boolean);
+      if (ids.length > 0) {
+        const { data: prods } = await supabaseClient.from('products').select('id, name').in('id', ids);
+        const nameMap = new Map((prods || []).map((p: any) => [p.id, p.name]));
+        comps.forEach((c) => { c.productName = nameMap.get(c.productId) || 'Produk'; });
+      }
+      return comps;
+    }
+  } catch (err) {
+    console.warn('Error fetching bundle components:', err);
+  }
+  return [];
+}
+
+/**
+ * Simpan komponen bundle (hapus lalu insert ulang)
+ */
+export async function saveBundleComponents(bundleId: string, components: { productId: string; quantity: number }[]): Promise<boolean> {
+  if (!supabaseClient) return false;
+  try {
+    await supabaseClient.from('bundle_components').delete().eq('bundle_id', bundleId);
+    if (components && components.length > 0) {
+      const rows = components.map((c) => ({
+        id: `bcomp-${bundleId}-${c.productId}`,
+        bundle_id: bundleId,
+        product_id: c.productId,
+        quantity: Math.max(1, Number(c.quantity) || 1)
+      }));
+      const { error } = await supabaseClient.from('bundle_components').insert(rows);
+      if (error) {
+        console.warn('Bundle components insert warning:', error.message);
+        return false;
+      }
+    }
+    return true;
+  } catch (err) {
+    console.warn('Save bundle components error:', err);
+    return false;
+  }
+}
+
+/**
+ * Rakit Bundle: kurangi stok gudang tiap komponen, tambah stok gudang bundle.
+ */
+export async function assembleBundle(bundleId: string, qty: number): Promise<{ success: boolean; message?: string }> {
+  if (!supabaseClient || !bundleId || qty <= 0) {
+    return { success: false, message: 'Jumlah rakit harus lebih dari 0.' };
+  }
+  try {
+    const comps = await fetchBundleComponents(bundleId);
+    if (comps.length === 0) {
+      return { success: false, message: 'Bundle belum punya komponen. Tambahkan komponen dulu.' };
+    }
+
+    // Cek stok komponen cukup
+    for (const c of comps) {
+      const { data: prod } = await supabaseClient.from('products').select('id, stock').eq('id', c.productId).maybeSingle();
+      const need = c.quantity * qty;
+      const have = Number(prod?.stock || 0);
+      if (have < need) {
+        return {
+          success: false,
+          message: `Stok gudang tidak cukup: ${c.productName || c.productId} butuh ${need}, tersedia ${have}.`
+        };
+      }
+    }
+
+    // Kurangi stok komponen
+    for (const c of comps) {
+      const need = c.quantity * qty;
+      const { data: prod } = await supabaseClient.from('products').select('id, stock').eq('id', c.productId).maybeSingle();
+      const newStock = Math.max(0, Number(prod?.stock || 0) - need);
+      await supabaseClient.from('products').update({ stock: newStock, updated_at: new Date().toISOString() }).eq('id', c.productId);
+    }
+
+    // Tambah stok bundle
+    const { data: bundleProd } = await supabaseClient.from('products').select('id, stock').eq('id', bundleId).maybeSingle();
+    const newBundleStock = Number(bundleProd?.stock || 0) + qty;
+    await supabaseClient.from('products').update({ stock: newBundleStock, updated_at: new Date().toISOString() }).eq('id', bundleId);
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('assembleBundle error:', err);
+    return { success: false, message: err?.message || 'Gagal merakit bundle.' };
+  }
+}
+
+/**
  * Fetch All Products from Supabase or Dexie
  */
 export async function fetchProductsFromDatabase(branchId: string): Promise<Product[]> {
@@ -794,7 +950,7 @@ export async function fetchProductsFromDatabase(branchId: string): Promise<Produ
         .or(`branch_id.eq.${branchId},branch_id.is.null`);
 
       if (!error && data && data.length > 0) {
-        return data.map((d: any) => ({
+        const mapped: Product[] = data.map((d: any) => ({
           id: d.id,
           branchId: d.branch_id || branchId,
           barcode: d.barcode,
@@ -811,9 +967,25 @@ export async function fetchProductsFromDatabase(branchId: string): Promise<Produ
           expiryDate: d.expiry_date || '',
           supplierName: d.supplier_name || '',
           isAvailable: Boolean(d.is_active),
+          sourceProductId: d.source_product_id || undefined,
+          isBundle: Boolean(d.is_bundle),
           createdAt: d.created_at || new Date().toISOString(),
           updatedAt: d.updated_at || new Date().toISOString()
         }));
+
+        // Resolusi stok varian: varian (mis. matang) memakai stok produk sumber (mentah)
+        const byId = new Map(mapped.map((p) => [p.id, p]));
+        mapped.forEach((p) => {
+          if (p.sourceProductId) {
+            const src = byId.get(p.sourceProductId);
+            if (src) {
+              p.stock = src.stock;
+              p.shelfStock = src.shelfStock;
+            }
+          }
+        });
+
+        return mapped;
       }
 
       // If database products table is empty, seed INITIAL_PRODUCTS automatically

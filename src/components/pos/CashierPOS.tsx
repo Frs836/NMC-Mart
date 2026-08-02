@@ -98,6 +98,7 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
   const [isCameraScanOpen, setIsCameraScanOpen] = useState(false);
   const [scanFeedback, setScanFeedback] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
   const [pendingScanConfirm, setPendingScanConfirm] = useState<{ product: Product; currentQty: number } | null>(null);
+  const [variantChoice, setVariantChoice] = useState<{ source: Product; options: Product[] } | null>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const scanFeedbackTimerRef = useRef<any>(null);
 
@@ -162,6 +163,8 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
   ];
 
   const filteredProducts = products.filter((p) => {
+    if (p.sourceProductId) return false; // varian dipilih lewat chooser produk induk
+
     const pCat = p.category ? String(p.category).trim().toLowerCase() : '';
     const selCat = selectedCategory.trim().toLowerCase();
     const matchesCategory =
@@ -228,6 +231,16 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
       return { status: 'error', message: msg };
     }
 
+    // Produk sumber punya varian (mis. matang) → minta pilih mentah/matang
+    const variants = products.filter((v) => v.sourceProductId === found.id);
+    if (variants.length > 0) {
+      playScanBeep(true);
+      setVariantChoice({ source: found, options: [found, ...variants] });
+      const msg = `${found.name}: pilih varian (mentah/matang)`;
+      showScanFeedback({ type: 'ok', text: msg });
+      return { status: 'confirm', message: msg };
+    }
+
     const existing = cartItems.find((i) => i.product.id === found.id);
     if (existing) {
       if (existing.quantity >= shelfAvailable) {
@@ -291,6 +304,20 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
     if (cartItems.length === 0) return;
     holdCurrentCart(holdNoteInput || `Pesanan #${heldCarts.length + 1}`);
     setHoldNoteInput('');
+  };
+
+  const handleProductTap = (p: Product) => {
+    const variants = products.filter((v) => v.sourceProductId === p.id);
+    if (variants.length > 0) {
+      setVariantChoice({ source: p, options: [p, ...variants] });
+      return;
+    }
+    const shelfAvailable = p.shelfStock ?? p.stock;
+    if (shelfAvailable <= 0) {
+      alert(`Stok produk "${p.name}" di etalase sedang kosong! Silakan Restock dari Gudang.`);
+      return;
+    }
+    addToCart(p, 1);
   };
 
   const openCheckout = () => {
@@ -688,7 +715,7 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
                 return (
                   <div
                     key={p.id}
-                    onClick={() => !isShelfEmpty && addToCart(p, 1)}
+                    onClick={() => !isShelfEmpty && handleProductTap(p)}
                     className={`flex flex-col justify-between p-3 rounded-2xl transition-all select-none min-h-[145px] border ${
                       isShelfEmpty
                         ? 'bg-slate-200/80 border-slate-300 opacity-75 shadow-[inset_2px_2px_4px_#cbd2d9] cursor-not-allowed'
@@ -1308,6 +1335,47 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
                 Ya, Tambah 1
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pilih Varian (mentah/matang) */}
+      {variantChoice && (
+        <div className="fixed inset-0 z-[65] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#eef2f6] rounded-3xl p-5 w-full max-w-sm shadow-2xl space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="font-extrabold text-sm text-slate-800">Pilih Varian</h3>
+              <button onClick={() => setVariantChoice(null)} className="text-slate-400 hover:text-slate-800">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-500 font-semibold">{variantChoice.source.name}</p>
+            <div className="space-y-2">
+              {variantChoice.options.map((opt) => {
+                const shelfAvailable = opt.shelfStock ?? opt.stock;
+                const disabled = shelfAvailable <= 0;
+                return (
+                  <button
+                    key={opt.id}
+                    disabled={disabled}
+                    onClick={() => {
+                      addToCart(opt, 1);
+                      playScanBeep(true);
+                      vibrate(50);
+                      showScanFeedback({ type: 'ok', text: `+ ${opt.name}` });
+                      setVariantChoice(null);
+                    }}
+                    className="w-full flex items-center justify-between p-3 rounded-2xl bg-[#eef2f6] shadow-[3px_3px_6px_#cbd2d9,-3px_-3px_6px_#ffffff] disabled:opacity-50"
+                  >
+                    <span className="text-xs font-bold text-slate-800">{opt.name}</span>
+                    <span className="text-sm font-black text-emerald-700">{formatCurrency(opt.sellingPrice)}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {variantChoice.options.some((o) => (o.shelfStock ?? o.stock) <= 0) && (
+              <p className="text-[10px] text-slate-400">Varian dengan stok 0 tidak bisa dipilih.</p>
+            )}
           </div>
         </div>
       )}

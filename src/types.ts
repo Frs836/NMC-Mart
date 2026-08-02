@@ -45,8 +45,19 @@ export interface Product {
   expiryDate: string;
   supplierName?: string;
   isAvailable: boolean;
+  sourceProductId?: string; // varian (mis. matang) menunjuk ke produk sumber (mentah)
+  isBundle?: boolean; // produk paket
   createdAt: string;
   updatedAt: string;
+}
+
+export interface BundleComponent {
+  id: string;
+  bundleId: string;
+  productId: string;
+  productName?: string;
+  quantity: number;
+  createdAt?: string;
 }
 
 export interface CartItem {

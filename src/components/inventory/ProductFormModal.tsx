@@ -8,6 +8,7 @@ interface ProductFormModalProps {
   product: Product | null;
   availableCategories?: string[];
   existingBarcodes?: string[];
+  allProducts?: Product[];
   onSave: (data: Partial<Product>) => void;
   onDelete?: (productId: string) => void;
   onClose: () => void;
@@ -30,6 +31,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   product,
   availableCategories = [],
   existingBarcodes = [],
+  allProducts = [],
   onSave,
   onDelete,
   onClose
@@ -56,7 +58,9 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
     shelfStock: product?.shelfStock ?? 0,
     minStock: product?.minStock || 10,
     expiryDate: product?.expiryDate || '2027-12-31',
-    supplierName: product?.supplierName || ''
+    supplierName: product?.supplierName || '',
+    sourceProductId: product?.sourceProductId || '',
+    isBundle: Boolean(product?.isBundle)
   });
 
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
@@ -306,6 +310,46 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
               placeholder="Contoh: PT Indofood Sukses Makmur"
               className="w-full bg-[#eef2f6] text-slate-800 font-bold p-2.5 rounded-xl shadow-[inset_2px_2px_4px_#cbd2d9] border-none focus:outline-none"
             />
+          </div>
+
+          <div>
+            <label className="text-slate-600 block mb-1 font-bold">
+              Produk Induk <span className="text-[10px] text-slate-400 font-normal">(jika ini varian, mis. "Matang" dari "Mentah")</span>
+            </label>
+            <select
+              value={formData.sourceProductId || ''}
+              onChange={(e) => setFormData({ ...formData, sourceProductId: e.target.value || undefined })}
+              className="w-full bg-[#eef2f6] text-slate-800 font-bold p-2.5 rounded-xl shadow-[inset_2px_2px_4px_#cbd2d9] border-none focus:outline-none"
+            >
+              <option value="">-- Produk Mandiri (bukan varian) --</option>
+              {allProducts
+                .filter((p) => p.id !== formData.id && !p.sourceProductId)
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} (Rp {p.sellingPrice?.toLocaleString('id-ID')})
+                  </option>
+                ))}
+            </select>
+            {formData.sourceProductId && (
+              <p className="text-[10px] font-bold text-blue-600 mt-1">
+                Varian ini memakai stok produk induk; stok gudang/rak varian tidak dipakai.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="text-slate-600 block mb-1 font-bold">Jenis Produk</label>
+            <div className="flex items-center gap-3 bg-[#eef2f6] p-2.5 rounded-xl shadow-[inset_2px_2px_4px_#cbd2d9]">
+              <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={Boolean(formData.isBundle)}
+                  onChange={(e) => setFormData({ ...formData, isBundle: e.target.checked })}
+                  className="w-4 h-4 accent-emerald-600"
+                />
+                Produk Paket (Bundle)
+              </label>
+            </div>
           </div>
         </div>
 
