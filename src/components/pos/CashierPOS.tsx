@@ -22,7 +22,8 @@ import {
   MessageSquare,
   ClipboardCheck,
   Loader2,
-  Camera
+  Camera,
+  HelpCircle
 } from 'lucide-react';
 import { Product, Customer, Promotion, PaymentMethod, Transaction, HeldCart } from '../../types';
 import { formatCurrency, formatDate, generateUUID } from '../../utils/formatters';
@@ -34,7 +35,7 @@ import { RackTransferModal } from './RackTransferModal';
 import { POSStockOpnameModal } from './POSStockOpnameModal';
 import { TeamChatModal } from './TeamChatModal';
 import { AIPOSAlertWidget } from './AIPOSAlertWidget';
-import { ScannerModal } from './ScannerModal';
+import { ScannerModal, ScanStatus } from './ScannerModal';
 
 interface CashierPOSProps {
   currentUser: any;
@@ -94,6 +95,7 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
   const [barcodeInput, setBarcodeInput] = useState('');
   const [isCameraScanOpen, setIsCameraScanOpen] = useState(false);
   const [scanFeedback, setScanFeedback] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
+  const [pendingScanConfirm, setPendingScanConfirm] = useState<{ product: Product; currentQty: number } | null>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const scanFeedbackTimerRef = useRef<any>(null);
 
@@ -197,28 +199,66 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
     scanFeedbackTimerRef.current = setTimeout(() => setScanFeedback(null), 1600);
   };
 
-  // Tambah ke keranjang via barcode (dipakai input scan & kamera)
-  const addByBarcode = (code: string) => {
+  // Tambah ke keranjang via barcode (input scan & kamera).
+  // Mengembalikan status utk notifikasi overlay kamera.
+  const addByBarcode = (code: string): { status: ScanStatus; message: string } => {
     const clean = String(code || '').trim();
-    if (!clean) return;
+    if (!clean) return { status: 'error', message: 'Barcode kosong' };
+    if (pendingScanConfirm) {
+      return { status: 'confirm', message: 'Selesaikan verifikasi produk sebelumnya dulu' };
+    }
+
     const found = products.find((p) => p.barcode && p.barcode.trim() === clean);
     if (!found) {
       playScanBeep(false);
       vibrate([60, 70, 60]);
-      showScanFeedback({ type: 'error', text: `Barcode ${clean} tidak ditemukan` });
-      return;
+      const msg = `Barcode ${clean} tidak ditemukan`;
+      showScanFeedback({ type: 'error', text: msg });
+      return { status: 'error', message: msg };
     }
+
     const shelfAvailable = found.shelfStock ?? found.stock;
     if (shelfAvailable <= 0) {
       playScanBeep(false);
-      showScanFeedback({ type: 'error', text: `Stok "${found.name}" di etalase kosong` });
-      return;
+      const msg = `Stok "${found.name}" di etalase kosong`;
+      showScanFeedback({ type: 'error', text: msg });
+      return { status: 'error', message: msg };
     }
+
+    const existing = cartItems.find((i) => i.product.id === found.id);
+    if (existing) {
+      if (existing.quantity >= shelfAvailable) {
+        playScanBeep(false);
+        const msg = `Stok etalase habis utk "${found.name}"`;
+        showScanFeedback({ type: 'error', text: msg });
+        return { status: 'error', message: msg };
+      }
+      // Produk sudah ada → wajib verifikasi sebelum menambah qty (anti scan ganda)
+      playScanBeep(true);
+      setPendingScanConfirm({ product: found, currentQty: existing.quantity });
+      const msg = `${found.name} sudah ${existing.quantity}x. Tambah 1 lagi?`;
+      showScanFeedback({ type: 'ok', text: msg });
+      return { status: 'confirm', message: msg };
+    }
+
     addToCart(found, 1);
     playScanBeep(true);
     vibrate(50);
-    showScanFeedback({ type: 'ok', text: `+ ${found.name}` });
+    const msg = `+ ${found.name}`;
+    showScanFeedback({ type: 'ok', text: msg });
+    return { status: 'added', message: msg };
   };
+
+  const confirmAddQty = () => {
+    if (!pendingScanConfirm) return;
+    addToCart(pendingScanConfirm.product, 1);
+    playScanBeep(true);
+    vibrate(50);
+    showScanFeedback({ type: 'ok', text: `+ ${pendingScanConfirm.product.name}` });
+    setPendingScanConfirm(null);
+  };
+
+  const cancelAddQty = () => setPendingScanConfirm(null);
 
   const handleBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1218,6 +1258,38 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
           currentUser={currentUser}
           onClose={() => setIsTeamChatModalOpen(false)}
         />
+      )}
+
+      {/* Verifikasi tambah quantity (anti scan ganda) */}
+      {pendingScanConfirm && (
+        <div className="fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#eef2f6] rounded-3xl p-5 w-full max-w-sm shadow-2xl space-y-3">
+            <div className="flex items-start gap-2">
+              <HelpCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-800">Tambah quantity?</h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  <span className="font-bold">{pendingScanConfirm.product.name}</span> sudah ada di keranjang (
+                  {pendingScanConfirm.currentQty}x). Konfirmasi untuk menambah 1 lagi.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={cancelAddQty}
+                className="flex-1 py-2.5 bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs"
+              >
+                Batal
+              </button>
+              <button
+                onClick={confirmAddQty}
+                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl text-xs"
+              >
+                Ya, Tambah 1
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Camera Barcode Scanner (multi-scan) */}

@@ -19,21 +19,28 @@ function isNativeSupported(): boolean {
  * Mulai scan barcode kontinu dari video element.
  * Prioritas: BarcodeDetector native (Chrome/Edge Android, iOS Safari 16.4+).
  * Fallback: @zxing/library (decode frame).
- * Ada jeda anti re-scan agar kode yang sama tidak terdeteksi ganda beruntun.
+ *
+ * Proteksi re-scan: kode yang sama diabaikan selama masih terlihat di frame
+ * (hanya emit 1x per penyajian). Saat kode keluar dari frame, siap untuk
+ * scan berikutnya. Ini mencegah scan ganda jika produk dipegang diam.
  */
 export function startBarcodeScan(
   video: HTMLVideoElement,
   onDetect: (detection: BarcodeDetection) => void,
-  minGapMs = 600
+  minGapMs = 400
 ): ScanHandle {
   let running = true;
   let lastScanAt = 0;
+  let lastEmittedCode: string | null = null;
 
   const emit = (d: BarcodeDetection | null) => {
     if (!running || !d || !d.code) return;
+    // Kode sama dengan yang terakhir di-emit → masih di frame, abaikan.
+    if (d.code === lastEmittedCode) return;
     const now = Date.now();
     if (now - lastScanAt < minGapMs) return;
     lastScanAt = now;
+    lastEmittedCode = d.code;
     onDetect(d);
   };
 
@@ -66,6 +73,9 @@ export function startBarcodeScan(
             const barcodes = await detector.detect(video);
             if (barcodes && barcodes.length > 0) {
               emit({ code: String(barcodes[0].rawValue), format: String(barcodes[0].format || '') });
+            } else {
+              // Tidak ada barcode di frame → reset agar kode berikutnya bisa discan lagi
+              lastEmittedCode = null;
             }
           }
         } catch (e) {
@@ -86,6 +96,8 @@ export function startBarcodeScan(
     zxingReader.decodeFromVideoElementContinuously(video, (result) => {
       if (result && result.getText()) {
         emit({ code: result.getText(), format: String(result.getBarcodeFormat() || '') });
+      } else {
+        lastEmittedCode = null;
       }
     });
   } catch (e) {

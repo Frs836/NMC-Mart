@@ -1,18 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Camera, AlertTriangle } from 'lucide-react';
+import { X, Camera, AlertTriangle, CheckCircle2, XCircle, HelpCircle } from 'lucide-react';
 import { startBarcodeScan, playScanBeep, vibrate, ScanHandle } from '../../services/scan';
+
+export type ScanStatus = 'added' | 'error' | 'confirm';
 
 interface ScannerModalProps {
   open: boolean;
   onClose: () => void;
-  onScan: (code: string) => void;
+  /** Kembalikan hasil scan: { status, message } untuk ditampilkan di overlay kamera */
+  onScan: (code: string) => { status: ScanStatus; message: string } | void;
   title?: string;
   autoCloseOnScan?: boolean;
 }
 
 /**
  * Modal scan barcode via kamera (continuous default).
- * Dipakai dari POS (scan ke keranjang) & form produk (isi field barcode).
+ * Notifikasi sukses/gagal/verifikasi tampil DI ATAS video kamera.
  */
 export const ScannerModal: React.FC<ScannerModalProps> = ({
   open,
@@ -24,14 +27,15 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanRef = useRef<ScanHandle | null>(null);
+  const feedbackTimerRef = useRef<any>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [lastCode, setLastCode] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ status: ScanStatus; message: string } | null>(null);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setCameraError(null);
-    setLastCode(null);
+    setFeedback(null);
 
     const start = async () => {
       try {
@@ -49,11 +53,13 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
           video.srcObject = stream;
           await video.play();
           scanRef.current = startBarcodeScan(video, (d) => {
-            setLastCode(d.code);
-            playScanBeep(true);
-            vibrate(60);
-            onScan(d.code);
-            if (autoCloseOnScan) {
+            const res = onScan(d.code);
+            const status = (res && res.status) || 'added';
+            const message = (res && res.message) || `Barcode ${d.code}`;
+            setFeedback({ status, message });
+            if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
+            feedbackTimerRef.current = setTimeout(() => setFeedback(null), 1400);
+            if (autoCloseOnScan && status === 'added') {
               setTimeout(() => onClose(), 400);
             }
           });
@@ -81,10 +87,18 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
         streamRef.current = null;
       }
       if (videoRef.current) videoRef.current.srcObject = null;
+      if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
     };
   }, [open]);
 
   if (!open) return null;
+
+  const feedbackStyle =
+    feedback?.status === 'added'
+      ? 'bg-emerald-500 text-white'
+      : feedback?.status === 'confirm'
+      ? 'bg-amber-500 text-white'
+      : 'bg-rose-600 text-white';
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/90 flex flex-col">
@@ -106,13 +120,23 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
         <video ref={videoRef} playsInline muted autoPlay className="absolute inset-0 w-full h-full object-cover" />
         {/* Viewfinder Frame */}
         <div className="absolute inset-x-8 top-1/2 -translate-y-1/2 h-36 border-2 border-emerald-400 rounded-2xl opacity-70 pointer-events-none" />
-        {lastCode && (
-          <div className="absolute inset-x-0 top-5 flex justify-center pointer-events-none">
-            <span className="bg-emerald-500 text-white font-mono font-bold text-xs px-3 py-1.5 rounded-full shadow-lg">
-              ✓ {lastCode}
-            </span>
+
+        {/* Notifikasi hasil scan DI ATAS kamera */}
+        {feedback && (
+          <div className="absolute inset-x-0 top-5 flex justify-center px-4 pointer-events-none">
+            <div className={`flex items-center gap-2 ${feedbackStyle} font-black text-sm px-4 py-2.5 rounded-2xl shadow-xl max-w-full`}>
+              {feedback.status === 'added' ? (
+                <CheckCircle2 className="w-5 h-5 shrink-0" />
+              ) : feedback.status === 'confirm' ? (
+                <HelpCircle className="w-5 h-5 shrink-0" />
+              ) : (
+                <XCircle className="w-5 h-5 shrink-0" />
+              )}
+              <span className="truncate">{feedback.message}</span>
+            </div>
           </div>
         )}
+
         {cameraError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6">
             <AlertTriangle className="w-10 h-10 text-amber-400 mb-3" />
@@ -122,7 +146,7 @@ export const ScannerModal: React.FC<ScannerModalProps> = ({
       </div>
 
       <div className="p-4 text-center text-white/70 text-[11px] font-semibold">
-        Arahkan kamera ke barcode produk.{' '}
+        Arahkan kamera ke barcode produk. Kode yang sama tidak discan ganda saat masih terlihat.{' '}
         {autoCloseOnScan
           ? 'Scanner otomatis tertutup setelah 1 pindai.'
           : 'Mode multi-scan: terus pindai barang berikutnya.'}
