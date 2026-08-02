@@ -96,6 +96,9 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
   const [isHeldModalOpen, setIsHeldModalOpen] = useState(false);
   const [holdNoteInput, setHoldNoteInput] = useState('');
 
+  // Mobile Cart Drawer State (di bawah breakpoint lg)
+  const [isCartDrawerOpen, setIsCartDrawerOpen] = useState(false);
+
   // Payment Modal State
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
@@ -210,6 +213,7 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
       alert('Keranjang belanja masih kosong.');
       return;
     }
+    setIsCartDrawerOpen(false);
     setPayAmount(cartGrandTotal);
     setIsPaymentModalOpen(true);
   };
@@ -263,6 +267,108 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
     setCustomerNameInput('');
     setCustomerPhoneInput('');
   };
+
+  // ===== Shared Cart Body (dipakai panel lg + drawer mobile) =====
+  const cartItemsList = (
+    <>
+      {cartItems.length === 0 ? (
+        <div className="h-full flex flex-col items-center justify-center text-slate-400 p-6 text-center space-y-2">
+          <ShoppingCart className="w-12 h-12 opacity-30 text-slate-500" />
+          <p className="text-xs font-extrabold text-slate-600">Keranjang Belanja Kosong</p>
+          <p className="text-[11px] text-slate-500">Pilih atau pindai produk di katalog untuk menambahkan ke kasir.</p>
+        </div>
+      ) : (
+        cartItems.map((item) => (
+          <div
+            key={item.product.id}
+            className="bg-[#eef2f6] rounded-2xl p-3 flex items-center justify-between gap-2 shadow-[4px_4px_8px_#cbd2d9,-4px_-4px_8px_#ffffff] border border-white/60"
+          >
+            <div className="flex-1 min-w-0">
+              <h4 className="text-xs font-bold text-slate-800 truncate">{item.product.name}</h4>
+              <p className="text-[11px] text-emerald-700 font-extrabold mt-0.5">
+                {formatCurrency(item.product.sellingPrice)}{' '}
+                <span className="text-[10px] text-slate-500 font-normal">/ unit</span>
+              </p>
+            </div>
+
+            {/* Quantity Controls */}
+            <div className="flex items-center gap-1 bg-[#eef2f6] shadow-[inset_2px_2px_4px_#cbd2d9,inset_-2px_-2px_4px_#ffffff] rounded-xl p-1">
+              <button
+                onClick={() => updateCartQuantity(item.product.id, -1)}
+                className="w-6 h-6 rounded-lg bg-[#eef2f6] shadow-[2px_2px_4px_#cbd2d9] text-slate-800 flex items-center justify-center font-bold text-xs"
+              >
+                -
+              </button>
+              <span className="w-6 text-center font-black text-xs text-slate-800">{item.quantity}</span>
+              <button
+                onClick={() => updateCartQuantity(item.product.id, 1)}
+                className="w-6 h-6 rounded-lg bg-[#eef2f6] shadow-[2px_2px_4px_#cbd2d9] text-slate-800 flex items-center justify-center font-bold text-xs"
+              >
+                +
+              </button>
+            </div>
+
+            <button
+              onClick={() => removeFromCart(item.product.id)}
+              className="text-slate-400 hover:text-rose-600 p-1"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))
+      )}
+    </>
+  );
+
+  const cartFooter = (
+    <div className="p-4 bg-[#eef2f6] border-t border-slate-200/80 space-y-2.5">
+      {/* Hold Cart Option */}
+      {cartItems.length > 0 && (
+        <div className="flex items-center gap-2 pb-1">
+          <input
+            type="text"
+            placeholder="Catatan simpan pesanan..."
+            value={holdNoteInput}
+            onChange={(e) => setHoldNoteInput(e.target.value)}
+            className="flex-1 bg-[#eef2f6] text-xs font-bold text-slate-800 px-3 py-1.5 rounded-xl shadow-[inset_2px_2px_4px_#cbd2d9] border-none focus:outline-none"
+          />
+          <button
+            onClick={handleHoldCartSubmit}
+            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl shadow-sm"
+          >
+            Tahan Pesanan
+          </button>
+        </div>
+      )}
+
+      <div className="flex justify-between text-xs text-slate-600 font-semibold">
+        <span>Subtotal Catalog</span>
+        <span>{formatCurrency(cartSubtotal)}</span>
+      </div>
+
+      {promoDiscount > 0 && (
+        <div className="flex justify-between text-xs text-emerald-700 font-bold">
+          <span>Diskon Promosi</span>
+          <span>-{formatCurrency(promoDiscount)}</span>
+        </div>
+      )}
+
+      <div className="flex justify-between text-sm sm:text-base font-black text-slate-800 pt-2 border-t border-slate-300">
+        <span>TOTAL PEMBAYARAN</span>
+        <span className="text-emerald-700 text-lg sm:text-xl">{formatCurrency(cartGrandTotal)}</span>
+      </div>
+
+      <button
+        disabled={cartItems.length === 0}
+        onClick={openCheckout}
+        className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black rounded-2xl text-xs sm:text-sm shadow-[4px_4px_10px_rgba(16,185,129,0.3)] active:shadow-[inset_2px_2px_4px_rgba(0,0,0,0.2)] transition-all flex items-center justify-center gap-2"
+      >
+        <span>PROSES BAYAR SEKARANG</span>
+        <CreditCard className="w-4 h-4" />
+      </button>
+    </div>
+  );
+  // ===== End Shared Cart Body =====
 
   return (
     <div className="flex flex-col gap-4 min-h-[calc(100vh-120px)] max-w-7xl mx-auto p-3 sm:p-5 pb-24 md:pb-6 text-slate-800">
@@ -368,7 +474,7 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
             onOpenRackTransfer={() => setIsRackTransferModalOpen(true)}
           />
 
-          <div className="flex flex-col md:flex-row gap-4 flex-1 min-h-0 md:max-h-[calc(100vh-176px)]">
+          <div className="flex flex-col lg:flex-row gap-4 flex-1 min-h-0 lg:max-h-[calc(100vh-176px)]">
           {/* Left Product Catalog Section */}
           <div className="flex-1 min-h-0 flex flex-col bg-[#eef2f6] rounded-3xl overflow-hidden shadow-[8px_8px_16px_#cbd2d9,-8px_-8px_16px_#ffffff] border border-white/60">
             {/* Search & Barcode Scan Bar */}
@@ -510,8 +616,8 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
             </div>
           </div>
 
-          {/* Right Touch Cart Panel - shrink-0 agar tidak ikut memanjang dengan produk */}
-          <div className="w-full md:w-80 lg:w-96 shrink-0 min-h-0 bg-[#eef2f6] rounded-3xl flex flex-col overflow-hidden shadow-[8px_8px_16px_#cbd2d9,-8px_-8px_16px_#ffffff] border border-white/60">
+          {/* Right Touch Cart Panel - hanya inline di lg+, di mobile pakai drawer */}
+          <div className="hidden lg:flex w-96 shrink-0 min-h-0 bg-[#eef2f6] rounded-3xl flex-col overflow-hidden shadow-[8px_8px_16px_#cbd2d9,-8px_-8px_16px_#ffffff] border border-white/60">
             <div className="p-3.5 border-b border-slate-200/80 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShoppingCart className="w-4 h-4 text-emerald-600" />
@@ -543,103 +649,82 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
 
             {/* Cart Item List */}
             <div className="flex-1 min-h-0 p-3 overflow-y-auto space-y-2.5">
-              {cartItems.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-slate-400 p-6 text-center space-y-2">
-                  <ShoppingCart className="w-12 h-12 opacity-30 text-slate-500" />
-                  <p className="text-xs font-extrabold text-slate-600">Keranjang Belanja Kosong</p>
-                  <p className="text-[11px] text-slate-500">Pilih atau pindai produk di katalog sebelah kiri untuk menambahkan ke kasir.</p>
-                </div>
-              ) : (
-                cartItems.map((item) => (
-                  <div
-                    key={item.product.id}
-                    className="bg-[#eef2f6] rounded-2xl p-3 flex items-center justify-between gap-2 shadow-[4px_4px_8px_#cbd2d9,-4px_-4px_8px_#ffffff] border border-white/60"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-xs font-bold text-slate-800 truncate">{item.product.name}</h4>
-                      <p className="text-[11px] text-emerald-700 font-extrabold mt-0.5">
-                        {formatCurrency(item.product.sellingPrice)}{' '}
-                        <span className="text-[10px] text-slate-500 font-normal">/ unit</span>
-                      </p>
-                    </div>
-
-                    {/* Quantity Controls */}
-                    <div className="flex items-center gap-1 bg-[#eef2f6] shadow-[inset_2px_2px_4px_#cbd2d9,inset_-2px_-2px_4px_#ffffff] rounded-xl p-1">
-                      <button
-                        onClick={() => updateCartQuantity(item.product.id, -1)}
-                        className="w-6 h-6 rounded-lg bg-[#eef2f6] shadow-[2px_2px_4px_#cbd2d9] text-slate-800 flex items-center justify-center font-bold text-xs"
-                      >
-                        -
-                      </button>
-                      <span className="w-6 text-center font-black text-xs text-slate-800">{item.quantity}</span>
-                      <button
-                        onClick={() => updateCartQuantity(item.product.id, 1)}
-                        className="w-6 h-6 rounded-lg bg-[#eef2f6] shadow-[2px_2px_4px_#cbd2d9] text-slate-800 flex items-center justify-center font-bold text-xs"
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    <button
-                      onClick={() => removeFromCart(item.product.id)}
-                      className="text-slate-400 hover:text-rose-600 p-1"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))
-              )}
+              {cartItemsList}
             </div>
 
             {/* Cart Total & Checkout Footer */}
-            <div className="p-4 bg-[#eef2f6] border-t border-slate-200/80 space-y-2.5">
-              {/* Hold Cart Option */}
-              {cartItems.length > 0 && (
-                <div className="flex items-center gap-2 pb-1">
-                  <input
-                    type="text"
-                    placeholder="Catatan simpan pesanan..."
-                    value={holdNoteInput}
-                    onChange={(e) => setHoldNoteInput(e.target.value)}
-                    className="flex-1 bg-[#eef2f6] text-xs font-bold text-slate-800 px-3 py-1.5 rounded-xl shadow-[inset_2px_2px_4px_#cbd2d9] border-none focus:outline-none"
-                  />
-                  <button
-                    onClick={handleHoldCartSubmit}
-                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-xl shadow-sm"
-                  >
-                    Tahan Pesanan
-                  </button>
-                </div>
-              )}
-
-              <div className="flex justify-between text-xs text-slate-600 font-semibold">
-                <span>Subtotal Catalog</span>
-                <span>{formatCurrency(cartSubtotal)}</span>
-              </div>
-
-              {promoDiscount > 0 && (
-                <div className="flex justify-between text-xs text-emerald-700 font-bold">
-                  <span>Diskon Promosi</span>
-                  <span>-{formatCurrency(promoDiscount)}</span>
-                </div>
-              )}
-
-              <div className="flex justify-between text-sm sm:text-base font-black text-slate-800 pt-2 border-t border-slate-300">
-                <span>TOTAL PEMBAYARAN</span>
-                <span className="text-emerald-700 text-lg sm:text-xl">{formatCurrency(cartGrandTotal)}</span>
-              </div>
-
-              <button
-                disabled={cartItems.length === 0}
-                onClick={openCheckout}
-                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black rounded-2xl text-xs sm:text-sm shadow-[4px_4px_10px_rgba(16,185,129,0.3)] active:shadow-[inset_2px_2px_4px_rgba(0,0,0,0.2)] transition-all flex items-center justify-center gap-2"
-              >
-                <span>PROSES BAYAR SEKARANG</span>
-                <CreditCard className="w-4 h-4" />
-              </button>
-            </div>
+            {cartFooter}
           </div>
         </div>
+
+        {/* Mobile / Tablet: Floating Cart Bar + Cart Drawer (di bawah lg) */}
+        {cartItems.length > 0 && (
+          <div className="lg:hidden sticky bottom-16 md:bottom-0 z-40 bg-emerald-600 text-white rounded-2xl shadow-[0_-6px_20px_rgba(0,0,0,0.25)] px-4 py-3 flex items-center justify-between">
+            <button
+              onClick={() => setIsCartDrawerOpen(true)}
+              className="flex items-center gap-2.5 flex-1 min-w-0 text-left"
+            >
+              <ShoppingCart className="w-5 h-5 shrink-0" />
+              <div className="min-w-0">
+                <span className="block text-[10px] font-bold opacity-80 truncate">Keranjang • {cartItems.length} item</span>
+                <span className="block text-base font-black truncate">{formatCurrency(cartGrandTotal)}</span>
+              </div>
+            </button>
+            <button
+              onClick={openCheckout}
+              className="px-4 py-2.5 bg-white text-emerald-700 font-black rounded-xl text-xs shadow-sm shrink-0"
+            >
+              Bayar
+            </button>
+          </div>
+        )}
+
+        {isCartDrawerOpen && (
+          <div
+            className="lg:hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex flex-col justify-end"
+            onClick={() => setIsCartDrawerOpen(false)}
+          >
+            <div
+              className="bg-[#eef2f6] rounded-t-3xl max-h-[85vh] flex flex-col overflow-hidden shadow-[0_-8px_24px_rgba(0,0,0,0.25)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShoppingCart className="w-5 h-5 text-emerald-600" />
+                  <h3 className="font-extrabold text-sm text-slate-800">Keranjang Kasir ({cartItems.length})</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  {heldCarts.length > 0 && (
+                    <button
+                      onClick={() => {
+                        setIsCartDrawerOpen(false);
+                        setIsHeldModalOpen(true);
+                      }}
+                      className="text-[11px] font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-xl flex items-center gap-1"
+                    >
+                      <PauseCircle className="w-3.5 h-3.5" />
+                      Tertahan ({heldCarts.length})
+                    </button>
+                  )}
+                  {cartItems.length > 0 && (
+                    <button onClick={clearCart} className="text-[11px] font-bold text-rose-600 flex items-center gap-1">
+                      <Trash2 className="w-3.5 h-3.5" /> Kosongkan
+                    </button>
+                  )}
+                  <button onClick={() => setIsCartDrawerOpen(false)} className="p-2 text-slate-400 hover:text-slate-800">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 min-h-0 p-3 overflow-y-auto space-y-2.5">
+                {cartItemsList}
+              </div>
+
+              {cartFooter}
+            </div>
+          </div>
+        )}
         </div>
       )}
 
