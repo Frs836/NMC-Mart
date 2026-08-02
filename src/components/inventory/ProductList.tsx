@@ -455,6 +455,7 @@ export const ProductList: React.FC<ProductListProps> = ({ userRole, activeBranch
         <ProductFormModal
           product={editingProduct}
           availableCategories={mergedCategories}
+          existingBarcodes={products.map((p) => p.barcode).filter(Boolean)}
           onSave={handleSaveProduct}
           onDelete={handleDeleteProduct}
           onClose={() => {

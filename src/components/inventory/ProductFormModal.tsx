@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Package, X, Trash2, PlusCircle, ListFilter } from 'lucide-react';
+import { Package, X, Trash2, PlusCircle, ListFilter, Camera } from 'lucide-react';
 import { Product } from '../../types';
-import { generateBarcode } from '../../utils/formatters';
+import { isValidEAN13 } from '../../utils/formatters';
+import { ScannerModal } from '../pos/ScannerModal';
 
 interface ProductFormModalProps {
   product: Product | null;
   availableCategories?: string[];
+  existingBarcodes?: string[];
   onSave: (data: Partial<Product>) => void;
   onDelete?: (productId: string) => void;
   onClose: () => void;
@@ -27,6 +29,7 @@ const DEFAULT_CATEGORIES = [
 export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   product,
   availableCategories = [],
+  existingBarcodes = [],
   onSave,
   onDelete,
   onClose
@@ -41,7 +44,7 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
   const [formData, setFormData] = useState<Partial<Product>>({
     id: product?.id,
-    barcode: product?.barcode || generateBarcode(),
+    barcode: product?.barcode || '',
     name: product?.name || '',
     brand: product?.brand || '',
     category: initialCategory,
@@ -57,11 +60,20 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
   });
 
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+  const [isScanBarcodeOpen, setIsScanBarcodeOpen] = useState(false);
+
+  const barcodeValue = String(formData.barcode || '').trim();
+  const barcodeDuplicate = barcodeValue.length > 0 && existingBarcodes.some((b) => b && b.trim() === barcodeValue && b.trim() !== product?.barcode);
+  const barcodeInvalidEan = /^\d{13}$/.test(barcodeValue) && !isValidEAN13(barcodeValue);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.barcode) {
-      alert('Nama produk dan Barcode wajib diisi!');
+    if (!formData.name) {
+      alert('Nama produk wajib diisi!');
+      return;
+    }
+    if (barcodeDuplicate) {
+      alert(`Barcode "${barcodeValue}" sudah terdaftar pada produk lain. Gunakan barcode lain atau kosongkan.`);
       return;
     }
 
@@ -109,23 +121,33 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
           <div>
-            <label className="text-slate-600 block mb-1 font-bold">Kode Barcode SKU</label>
+            <label className="text-slate-600 block mb-1 font-bold">
+              Kode Barcode SKU <span className="text-[10px] text-slate-400 font-normal">(opsional — kosongkan jika tanpa barcode)</span>
+            </label>
             <div className="flex gap-1.5">
               <input
                 type="text"
                 value={formData.barcode}
                 onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                required
+                placeholder="Contoh: 899179424840"
                 className="w-full bg-[#eef2f6] text-emerald-800 font-mono font-bold p-2.5 rounded-xl shadow-[inset_2px_2px_4px_#cbd2d9] border-none focus:outline-none"
               />
               <button
                 type="button"
-                onClick={() => setFormData({ ...formData, barcode: generateBarcode() })}
-                className="px-2.5 py-1 bg-[#eef2f6] text-slate-700 font-bold rounded-xl text-[10px] shadow-[2px_2px_4px_#cbd2d9]"
+                onClick={() => setIsScanBarcodeOpen(true)}
+                className="px-2.5 py-1 bg-[#eef2f6] text-blue-700 font-bold rounded-xl text-[10px] shadow-[2px_2px_4px_#cbd2d9] flex items-center gap-1"
+                title="Pindai barcode dari kemasan pakai kamera"
               >
-                Acak
+                <Camera className="w-3 h-3" />
+                Scan
               </button>
             </div>
+            {barcodeDuplicate && (
+              <p className="text-[10px] font-bold text-rose-600 mt-1">Barcode ini sudah terdaftar pada produk lain.</p>
+            )}
+            {barcodeInvalidEan && (
+              <p className="text-[10px] font-bold text-amber-600 mt-1">Format EAN-13 tidak valid (cek digit salah). Barcode tetap bisa disimpan jika dari format lain.</p>
+            )}
           </div>
 
           <div>
@@ -338,6 +360,18 @@ export const ProductFormModal: React.FC<ProductFormModalProps> = ({
           </button>
         </div>
       </form>
+
+      {/* Camera Barcode Scanner - isi field barcode */}
+      <ScannerModal
+        open={isScanBarcodeOpen}
+        onClose={() => setIsScanBarcodeOpen(false)}
+        onScan={(code) => {
+          setFormData((prev) => ({ ...prev, barcode: code }));
+          setIsScanBarcodeOpen(false);
+        }}
+        title="Pindai Barcode Kemasan"
+        autoCloseOnScan
+      />
     </div>
   );
 };

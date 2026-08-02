@@ -63,6 +63,17 @@ export function generateBarcode(): string {
   return digits + check;
 }
 
+export function isValidEAN13(code: string): boolean {
+  const c = String(code || '').trim();
+  if (!/^\d{13}$/.test(c)) return false;
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    sum += Number(c[i]) * (i % 2 === 0 ? 1 : 3);
+  }
+  const check = (10 - (sum % 10)) % 10;
+  return check === Number(c[12]);
+}
+
 export function isSameLocalDay(dateStr: string, targetDate: Date): boolean {
   if (!dateStr) return false;
   try {

@@ -21,17 +21,20 @@ import {
   Layers,
   MessageSquare,
   ClipboardCheck,
-  Loader2
+  Loader2,
+  Camera
 } from 'lucide-react';
 import { Product, Customer, Promotion, PaymentMethod, Transaction, HeldCart } from '../../types';
 import { formatCurrency, formatDate, generateUUID } from '../../utils/formatters';
 import { fetchServerProducts, processCompletedTransaction, logAudit } from '../../services/api';
 import { fetchTransactionsFromCloud } from '../../services/supabase';
+import { playScanBeep, vibrate } from '../../services/scan';
 import { ReceiptModal } from './ReceiptModal';
 import { RackTransferModal } from './RackTransferModal';
 import { POSStockOpnameModal } from './POSStockOpnameModal';
 import { TeamChatModal } from './TeamChatModal';
 import { AIPOSAlertWidget } from './AIPOSAlertWidget';
+import { ScannerModal } from './ScannerModal';
 
 interface CashierPOSProps {
   currentUser: any;
@@ -89,6 +92,10 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
   const [selectedCategory, setSelectedCategory] = useState('Semua');
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
   const [barcodeInput, setBarcodeInput] = useState('');
+  const [isCameraScanOpen, setIsCameraScanOpen] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+  const scanFeedbackTimerRef = useRef<any>(null);
 
   // Transaction History State
   const [shiftTransactions, setShiftTransactions] = useState<Transaction[]>([]);
@@ -184,23 +191,58 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
     );
   });
 
+  const showScanFeedback = (fb: { type: 'ok' | 'error'; text: string }) => {
+    setScanFeedback(fb);
+    if (scanFeedbackTimerRef.current) clearTimeout(scanFeedbackTimerRef.current);
+    scanFeedbackTimerRef.current = setTimeout(() => setScanFeedback(null), 1600);
+  };
+
+  // Tambah ke keranjang via barcode (dipakai input scan & kamera)
+  const addByBarcode = (code: string) => {
+    const clean = String(code || '').trim();
+    if (!clean) return;
+    const found = products.find((p) => p.barcode && p.barcode.trim() === clean);
+    if (!found) {
+      playScanBeep(false);
+      vibrate([60, 70, 60]);
+      showScanFeedback({ type: 'error', text: `Barcode ${clean} tidak ditemukan` });
+      return;
+    }
+    const shelfAvailable = found.shelfStock ?? found.stock;
+    if (shelfAvailable <= 0) {
+      playScanBeep(false);
+      showScanFeedback({ type: 'error', text: `Stok "${found.name}" di etalase kosong` });
+      return;
+    }
+    addToCart(found, 1);
+    playScanBeep(true);
+    vibrate(50);
+    showScanFeedback({ type: 'ok', text: `+ ${found.name}` });
+  };
+
   const handleBarcodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!barcodeInput) return;
-    const found = products.find((p) => p.barcode === barcodeInput.trim());
-    if (found) {
-      const shelfAvailable = found.shelfStock ?? found.stock;
-      if (shelfAvailable <= 0) {
-        alert(`Stok produk "${found.name}" di etalase sedang kosong! Silakan Lakukan Restock dari Gudang.`);
-        return;
-      }
-      addToCart(found, 1);
-      setBarcodeInput('');
-      setIsBarcodeScannerOpen(false);
-    } else {
-      alert(`Kode Barcode SKU "${barcodeInput}" tidak ditemukan.`);
+    addByBarcode(barcodeInput);
+    setBarcodeInput('');
+    if (isBarcodeScannerOpen) {
+      requestAnimationFrame(() => barcodeInputRef.current?.focus());
     }
   };
+
+  // Auto-focus input barcode saat mode pindai dibuka
+  useEffect(() => {
+    if (isBarcodeScannerOpen) {
+      const t = setTimeout(() => barcodeInputRef.current?.focus(), 60);
+      return () => clearTimeout(t);
+    }
+  }, [isBarcodeScannerOpen]);
+
+  // Bersihkan timer feedback saat unmount
+  useEffect(() => {
+    return () => {
+      if (scanFeedbackTimerRef.current) clearTimeout(scanFeedbackTimerRef.current);
+    };
+  }, []);
 
   const handleHoldCartSubmit = () => {
     if (cartItems.length === 0) return;
@@ -523,30 +565,55 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
               </div>
               <button
                 onClick={() => setIsBarcodeScannerOpen(!isBarcodeScannerOpen)}
-                className="flex items-center gap-1.5 bg-[#eef2f6] text-emerald-700 px-3.5 py-2.5 rounded-2xl text-xs font-extrabold shadow-[4px_4px_8px_#cbd2d9,-4px_-4px_8px_#ffffff] active:shadow-[inset_2px_2px_4px_#cbd2d9]"
-                title="Pindai Barcode"
+                className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl text-xs font-extrabold shadow-[4px_4px_8px_#cbd2d9,-4px_-4px_8px_#ffffff] active:shadow-[inset_2px_2px_4px_#cbd2d9] ${
+                  isBarcodeScannerOpen
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-[#eef2f6] text-emerald-700'
+                }`}
+                title="Mode Pindai: scan beruntun tanpa klik (USB keyboard / ketik)"
               >
-                <Barcode className="w-4 h-4 text-emerald-600" />
-                <span className="hidden sm:inline">Pindai SKU</span>
+                <Barcode className="w-4 h-4" />
+                <span className="hidden sm:inline">{isBarcodeScannerOpen ? 'Mode Pindai ON' : 'Mode Pindai'}</span>
+              </button>
+              <button
+                onClick={() => setIsCameraScanOpen(true)}
+                className="flex items-center gap-1.5 bg-[#eef2f6] text-blue-700 px-3.5 py-2.5 rounded-2xl text-xs font-extrabold shadow-[4px_4px_8px_#cbd2d9,-4px_-4px_8px_#ffffff] active:shadow-[inset_2px_2px_4px_#cbd2d9]"
+                title="Pindai barcode pakai kamera (multi-scan)"
+              >
+                <Camera className="w-4 h-4 text-blue-600" />
+                <span className="hidden sm:inline">Scan Kamera</span>
               </button>
             </div>
+
+            {/* Scan Feedback Toast */}
+            {scanFeedback && (
+              <div
+                className={`mx-3 mt-2 px-3 py-2 rounded-xl text-xs font-bold shadow-md ${
+                  scanFeedback.type === 'ok'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-rose-600 text-white'
+                }`}
+              >
+                {scanFeedback.type === 'ok' ? '✓' : '✕'} {scanFeedback.text}
+              </div>
+            )}
 
             {/* Barcode Quick Input Simulator */}
             {isBarcodeScannerOpen && (
               <form onSubmit={handleBarcodeSubmit} className="bg-slate-200/50 p-3 border-b border-slate-300 flex gap-2">
                 <input
+                  ref={barcodeInputRef}
                   type="text"
-                  placeholder="Masukkan / scan nomor barcode SKU..."
+                  placeholder="Scan / ketik barcode lalu Enter (tetap terbuka utk scan beruntun)..."
                   value={barcodeInput}
                   onChange={(e) => setBarcodeInput(e.target.value)}
-                  autoFocus
                   className="flex-1 bg-[#eef2f6] text-emerald-800 font-mono px-3 py-2 rounded-xl text-xs font-bold shadow-[inset_2px_2px_4px_#cbd2d9] border-none focus:outline-none"
                 />
                 <button
                   type="submit"
                   className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-sm"
                 >
-                  Tambah SKU
+                  Tambah
                 </button>
               </form>
             )}
@@ -1152,6 +1219,14 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
           onClose={() => setIsTeamChatModalOpen(false)}
         />
       )}
+
+      {/* Camera Barcode Scanner (multi-scan) */}
+      <ScannerModal
+        open={isCameraScanOpen}
+        onClose={() => setIsCameraScanOpen(false)}
+        onScan={addByBarcode}
+        title="Pindai Barcode Produk"
+      />
     </div>
   );
 };

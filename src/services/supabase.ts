@@ -212,7 +212,7 @@ export async function syncProductToCloud(product: Product): Promise<boolean> {
 
     const { error } = await supabaseClient.from('products').upsert({
       id: product.id,
-      barcode: product.barcode || `BAR-${Date.now()}`,
+      barcode: product.barcode || null,
       name: product.name,
       category: product.category || 'Umum',
       purchase_price: product.purchasePrice || 0,
