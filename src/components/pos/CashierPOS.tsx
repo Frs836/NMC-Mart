@@ -361,16 +361,16 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
 
       {/* MODE 1: TERMINAL & CATALOG */}
       {posMode === 'TERMINAL' && (
-        <div className="flex flex-col gap-4 flex-1">
+        <div className="flex flex-col gap-4 flex-1 min-h-0">
           {/* AI POS Alert & Assistant Banner */}
           <AIPOSAlertWidget
             products={products}
             onOpenRackTransfer={() => setIsRackTransferModalOpen(true)}
           />
 
-          <div className="flex flex-col lg:flex-row gap-4 flex-1">
+          <div className="flex flex-col md:flex-row gap-4 flex-1 min-h-0 md:max-h-[calc(100vh-176px)]">
           {/* Left Product Catalog Section */}
-          <div className="flex-1 flex flex-col bg-[#eef2f6] rounded-3xl overflow-hidden shadow-[8px_8px_16px_#cbd2d9,-8px_-8px_16px_#ffffff] border border-white/60">
+          <div className="flex-1 min-h-0 flex flex-col bg-[#eef2f6] rounded-3xl overflow-hidden shadow-[8px_8px_16px_#cbd2d9,-8px_-8px_16px_#ffffff] border border-white/60">
             {/* Search & Barcode Scan Bar */}
             <div className="p-3 border-b border-slate-200/80 flex items-center gap-2">
               <div className="relative flex-1">
@@ -431,7 +431,7 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
             </div>
 
             {/* Product Cards Grid */}
-            <div className="flex-1 p-3.5 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div className="flex-1 min-h-0 p-3.5 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {filteredProducts.map((p) => {
                 const shelfVal = p.shelfStock !== undefined ? p.shelfStock : p.stock;
                 const isShelfEmpty = shelfVal <= 0;
@@ -510,8 +510,8 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
             </div>
           </div>
 
-          {/* Right Touch Cart Panel */}
-          <div className="w-full lg:w-96 bg-[#eef2f6] rounded-3xl flex flex-col overflow-hidden shadow-[8px_8px_16px_#cbd2d9,-8px_-8px_16px_#ffffff] border border-white/60">
+          {/* Right Touch Cart Panel - shrink-0 agar tidak ikut memanjang dengan produk */}
+          <div className="w-full md:w-80 lg:w-96 shrink-0 min-h-0 bg-[#eef2f6] rounded-3xl flex flex-col overflow-hidden shadow-[8px_8px_16px_#cbd2d9,-8px_-8px_16px_#ffffff] border border-white/60">
             <div className="p-3.5 border-b border-slate-200/80 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShoppingCart className="w-4 h-4 text-emerald-600" />
@@ -542,7 +542,7 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
             </div>
 
             {/* Cart Item List */}
-            <div className="flex-1 p-3 overflow-y-auto space-y-2.5">
+            <div className="flex-1 min-h-0 p-3 overflow-y-auto space-y-2.5">
               {cartItems.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-slate-400 p-6 text-center space-y-2">
                   <ShoppingCart className="w-12 h-12 opacity-30 text-slate-500" />
