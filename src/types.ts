@@ -103,6 +103,26 @@ export interface Shift {
   notes?: string;
 }
 
+export interface RefundItem {
+  productId: string;
+  productName: string;
+  quantity: number;
+  sellingPrice: number;
+  subtotal: number;
+}
+
+export interface Refund {
+  id: string;
+  transactionId: string;
+  branchId: string;
+  items: RefundItem[];
+  refundAmount: number;
+  isFull: boolean;
+  reason: string;
+  createdBy: string;
+  createdAt: string;
+}
+
 export interface CashMovement {
   id: string;
   branchId: string;

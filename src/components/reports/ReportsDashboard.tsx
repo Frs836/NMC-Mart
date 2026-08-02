@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart3, Award, AlertTriangle, Printer, Download, Database, Calendar, Filter, Wallet, Package, Clock, User, ShieldCheck, DollarSign, CheckCircle2 } from 'lucide-react';
-import { Transaction, Product, UserRole, CashMovement, Shift } from '../../types';
+import { Transaction, Product, UserRole, CashMovement, Shift, Refund } from '../../types';
 import { formatCurrency, formatDate, toLocalDateKey } from '../../utils/formatters';
-import { fetchCashMovementsFromCloud, fetchTransactionsFromCloud, fetchShiftsFromCloud, fetchProductsFromDatabase } from '../../services/supabase';
+import { fetchCashMovementsFromCloud, fetchTransactionsFromCloud, fetchShiftsFromCloud, fetchProductsFromDatabase, fetchRefundsFromCloud } from '../../services/supabase';
 
 interface ReportsDashboardProps {
   userRole?: UserRole;
@@ -14,6 +14,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
+  const [refunds, setRefunds] = useState<Refund[]>([]);
 
   // Filter Mode: 'TIMEFRAME' (by Calendar) vs 'SHIFT' (by Shift Kasir boundaries)
   const [filterMode, setFilterMode] = useState<'TIMEFRAME' | 'SHIFT'>('TIMEFRAME');
@@ -37,16 +38,18 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
   const loadData = async () => {
     try {
       const branchId = activeBranch?.id || 'default-branch-001';
-      const [cloudTxs, cloudCms, cloudShifts, cloudProds] = await Promise.all([
+      const [cloudTxs, cloudCms, cloudShifts, cloudProds, cloudRefunds] = await Promise.all([
         fetchTransactionsFromCloud(branchId),
         fetchCashMovementsFromCloud(branchId),
         fetchShiftsFromCloud(branchId),
-        fetchProductsFromDatabase(branchId)
+        fetchProductsFromDatabase(branchId),
+        fetchRefundsFromCloud(branchId)
       ]);
 
       setAllTransactions(cloudTxs || []);
       setProducts(cloudProds || []);
       setCashMovements(cloudCms || []);
+      setRefunds(cloudRefunds || []);
 
       const sortedShifts = (cloudShifts || []).sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
       setShifts(sortedShifts);
@@ -150,12 +153,17 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
     return true;
   };
 
-  // Filtered Transactions & Cash Movements
-  const filteredTransactions = allTransactions.filter(isTxInFilter);
+  // Filtered Transactions & Cash Movements (REFUNDED dikeluarkan)
+  const filteredTransactions = allTransactions.filter(isTxInFilter).filter((t) => t.status !== 'REFUNDED');
   const filteredCashMovements = cashMovements.filter(isMovementInFilter);
 
+  // Refund pada periode filter mengurangi omset
+  const filteredTxIds = new Set(filteredTransactions.map((t) => t.id));
+  const periodRefunds = refunds.filter((r) => filteredTxIds.has(r.transactionId));
+  const periodRefundTotal = periodRefunds.reduce((a, r) => a + r.refundAmount, 0);
+
   // Financial Metrics Calculation
-  const totalRevenue = filteredTransactions.reduce((acc, t) => acc + (t.grandTotal || 0), 0);
+  const totalRevenue = filteredTransactions.reduce((acc, t) => acc + (t.grandTotal || 0), 0) - periodRefundTotal;
   const cashSalesTotal = filteredTransactions
     .filter((t) => t.paymentMethod === 'CASH')
     .reduce((acc, t) => acc + (t.grandTotal || 0), 0);
@@ -205,6 +213,9 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
       }
     }
   }
+
+  // Refund mengurangi laba kotor
+  totalGrossProfit -= periodRefundTotal;
 
   const itemizedSalesList = Object.values(itemSalesMap).sort((a, b) => b.qty - a.qty);
   const topSellingList = itemizedSalesList.slice(0, 5);

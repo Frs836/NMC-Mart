@@ -23,7 +23,8 @@ import {
   ClipboardCheck,
   Loader2,
   Camera,
-  HelpCircle
+  HelpCircle,
+  RotateCcw
 } from 'lucide-react';
 import { Product, Customer, Promotion, PaymentMethod, Transaction, HeldCart } from '../../types';
 import { formatCurrency, formatDate, generateUUID } from '../../utils/formatters';
@@ -36,6 +37,7 @@ import { POSStockOpnameModal } from './POSStockOpnameModal';
 import { TeamChatModal } from './TeamChatModal';
 import { AIPOSAlertWidget } from './AIPOSAlertWidget';
 import { ScannerModal, ScanStatus } from './ScannerModal';
+import { RefundModal } from './RefundModal';
 
 interface CashierPOSProps {
   currentUser: any;
@@ -103,6 +105,7 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
   const [shiftTransactions, setShiftTransactions] = useState<Transaction[]>([]);
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [selectedTxForReceipt, setSelectedTxForReceipt] = useState<Transaction | null>(null);
+  const [refundTarget, setRefundTarget] = useState<Transaction | null>(null);
 
   // Held Cart Modal State
   const [isHeldModalOpen, setIsHeldModalOpen] = useState(false);
@@ -935,16 +938,33 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
                       <td className="p-3.5 text-center font-bold text-slate-800">{tx.items?.length || 0} unit</td>
                       <td className="p-3.5 text-right font-black text-sm text-emerald-700">{formatCurrency(tx.grandTotal)}</td>
                       <td className="p-3.5 text-center">
-                        <button
-                          onClick={() => {
-                            setSelectedTxForReceipt(tx);
-                            setIsReceiptModalOpen(true);
-                          }}
-                          className="px-3 py-1.5 bg-[#eef2f6] hover:bg-slate-200 text-emerald-700 font-extrabold rounded-xl text-[11px] shadow-[3px_3px_6px_#cbd2d9,-3px_-3px_6px_#ffffff] flex items-center gap-1 mx-auto"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Detail Struk</span>
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          {tx.status === 'REFUNDED' && (
+                            <span className="px-2 py-1 rounded-xl bg-rose-100 text-rose-800 font-black text-[10px] uppercase shadow-[inset_1px_1px_2px_#cbd2d9]">
+                              Refunded
+                            </span>
+                          )}
+                          {['OWNER', 'MANAGER', 'MAINTENANCE'].includes(currentUser.role) && tx.status !== 'REFUNDED' && (
+                            <button
+                              onClick={() => setRefundTarget(tx)}
+                              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 font-extrabold rounded-xl text-[11px] shadow-[3px_3px_6px_#cbd2d9,-3px_-3px_6px_#ffffff] flex items-center gap-1"
+                              title="Return / Refund barang dari transaksi ini"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Return</span>
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              setSelectedTxForReceipt(tx);
+                              setIsReceiptModalOpen(true);
+                            }}
+                            className="px-3 py-1.5 bg-[#eef2f6] hover:bg-slate-200 text-emerald-700 font-extrabold rounded-xl text-[11px] shadow-[3px_3px_6px_#cbd2d9,-3px_-3px_6px_#ffffff] flex items-center gap-1"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Detail Struk</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -1299,6 +1319,20 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
         onScan={addByBarcode}
         title="Pindai Barcode Produk"
       />
+
+      {/* Refund / Return Modal */}
+      {refundTarget && (
+        <RefundModal
+          tx={refundTarget}
+          currentUser={currentUser}
+          onClose={() => setRefundTarget(null)}
+          onDone={() => {
+            setRefundTarget(null);
+            loadShiftTransactions();
+            loadProducts();
+          }}
+        />
+      )}
     </div>
   );
 };

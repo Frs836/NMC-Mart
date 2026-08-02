@@ -1,4 +1,4 @@
-import { Product, Transaction, Shift, AuditLog, CashMovement, ShelfStockTransfer, TeamMessage, PurchaseOrder, StoreExpense, SalesTarget, User } from '../types';
+import { Product, Transaction, Shift, AuditLog, CashMovement, ShelfStockTransfer, TeamMessage, PurchaseOrder, StoreExpense, SalesTarget, User, Refund, RefundItem } from '../types';
 import {
   getSupabaseClient,
   syncProductToCloud,
@@ -11,7 +11,11 @@ import {
   syncTeamMessageToCloud,
   fetchTeamMessagesFromCloud,
   purgeCloudStoreData,
-  fetchShiftsFromCloud
+  fetchShiftsFromCloud,
+  syncRefundToCloud,
+  updateTransactionStatus,
+  restockShelfOnRefund,
+  syncCashMovementToCloud
 } from './supabase';
 
 export const API_BASE = '/api';
@@ -83,6 +87,85 @@ export async function deleteProduct(productId: string, operatorName = 'Manager')
   } catch (err) {
     console.error('Failed to delete product from cloud:', err);
     return false;
+  }
+}
+
+/**
+ * Process Refund / Return barang.
+ * 1) Restock shelf_stock, 2) catat refund, 3) full return -> status REFUNDED,
+ * 4) kas keluar (CASH_OUT) agar close-shift benar, 5) audit log.
+ */
+export async function processRefund(
+  tx: Transaction,
+  items: { productId: string; productName: string; quantity: number; sellingPrice: number }[],
+  reason: string,
+  operatorName: string,
+  operatorId: string
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    if (!items || items.length === 0) {
+      return { success: false, message: 'Tidak ada item yang dipilih untuk dikembalikan.' };
+    }
+    if (!reason || !reason.trim()) {
+      return { success: false, message: 'Alasan refund wajib diisi.' };
+    }
+
+    const refundItems: RefundItem[] = items.map((i) => ({
+      productId: i.productId,
+      productName: i.productName,
+      quantity: i.quantity,
+      sellingPrice: i.sellingPrice,
+      subtotal: i.quantity * i.sellingPrice
+    }));
+    const refundAmount = refundItems.reduce((a, i) => a + i.subtotal, 0);
+    const totalSoldQty = (tx.items || []).reduce((a, i) => a + (i.quantity || 0), 0);
+    const returnedQty = refundItems.reduce((a, i) => a + i.quantity, 0);
+    const isFull = returnedQty >= totalSoldQty;
+
+    await restockShelfOnRefund(refundItems.map((i) => ({ productId: i.productId, quantity: i.quantity })));
+
+    const refund: Refund = {
+      id: `refund-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      transactionId: tx.id,
+      branchId: tx.branchId || 'default-branch-001',
+      items: refundItems,
+      refundAmount,
+      isFull,
+      reason: reason.trim(),
+      createdBy: operatorName,
+      createdAt: new Date().toISOString()
+    };
+    await syncRefundToCloud(refund);
+
+    if (isFull) {
+      await updateTransactionStatus(tx.id, 'REFUNDED');
+    }
+
+    await syncCashMovementToCloud({
+      id: `cash-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+      branchId: tx.branchId || 'default-branch-001',
+      shiftId: tx.shiftId && tx.shiftId !== 'shift-offline' ? tx.shiftId : null,
+      type: 'EXPENSE_OUT',
+      amount: refundAmount,
+      category: 'REFUND',
+      description: `Refund ${tx.txUuid.slice(0, 8)}${isFull ? ' (full)' : ''}: ${reason.trim()}`,
+      createdBy: operatorName,
+      createdAt: new Date().toISOString()
+    });
+
+    await logAudit(
+      'RETURN_BARANG',
+      'POS',
+      `Refund ${refundAmount.toLocaleString('id-ID')} utk transaksi ${tx.txUuid.slice(0, 8)} (${refundItems.length} item, ${isFull ? 'full' : 'sebagian'}). Alasan: ${reason.trim()}`,
+      operatorName,
+      operatorId,
+      tx.branchId || 'default-branch-001'
+    );
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('processRefund error:', err);
+    return { success: false, message: err?.message || 'Gagal memproses refund.' };
   }
 }
 

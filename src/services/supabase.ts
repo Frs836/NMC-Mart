@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ENV_CONFIG, isSupabaseConfigured } from '../config/env';
-import { Product, Transaction, Shift, AuditLog, Branch, User, CashMovement, ShelfStockTransfer, TeamMessage } from '../types';
+import { Product, Transaction, Shift, AuditLog, Branch, User, CashMovement, ShelfStockTransfer, TeamMessage, Refund } from '../types';
 import { INITIAL_PRODUCTS } from '../db/seed';
 
 let supabaseClient: SupabaseClient | null = null;
@@ -341,6 +341,7 @@ export async function syncTransactionToCloud(tx: Transaction): Promise<boolean> 
       cashier_name: tx.cashierName || 'Kasir',
       customer_name: tx.customerName || 'Pelanggan Umum',
       payment_method: tx.paymentMethod || 'CASH',
+      status: tx.status || 'COMPLETED',
       subtotal: tx.subtotal || 0,
       discount: tx.discountTotal || 0,
       promo_code: (tx as any).promoCode || null,
@@ -664,6 +665,121 @@ export async function deleteUserFromCloud(userId: string): Promise<boolean> {
     console.warn('Cloud delete error for user:', err);
     return false;
   }
+}
+
+/**
+ * Sync Refund Record to Supabase
+ */
+export async function syncRefundToCloud(refund: Refund): Promise<boolean> {
+  if (!supabaseClient) return false;
+  try {
+    const { error } = await supabaseClient.from('refunds').upsert({
+      id: refund.id,
+      transaction_id: refund.transactionId,
+      branch_id: refund.branchId || null,
+      items: refund.items,
+      refund_amount: refund.refundAmount,
+      is_full: refund.isFull,
+      reason: refund.reason || null,
+      created_by: refund.createdBy,
+      created_at: refund.createdAt || new Date().toISOString()
+    }, { onConflict: 'id' });
+    if (error) {
+      console.warn('Supabase refund upsert warning:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Cloud sync error for refund:', err);
+    return false;
+  }
+}
+
+/**
+ * Fetch Refunds from Supabase
+ */
+export async function fetchRefundsFromCloud(branchId?: string): Promise<Refund[]> {
+  if (!supabaseClient) return [];
+  try {
+    let query = supabaseClient.from('refunds').select('*').order('created_at', { ascending: false }).limit(500);
+    if (branchId) {
+      query = query.or(`branch_id.eq.${branchId},branch_id.is.null`);
+    }
+    const { data, error } = await query;
+    if (!error && data) {
+      return data.map((d: any) => ({
+        id: d.id,
+        transactionId: d.transaction_id,
+        branchId: d.branch_id || branchId || 'default-branch-001',
+        items: Array.isArray(d.items) ? d.items : [],
+        refundAmount: Number(d.refund_amount || 0),
+        isFull: Boolean(d.is_full),
+        reason: d.reason || '',
+        createdBy: d.created_by || 'Operator',
+        createdAt: d.created_at || new Date().toISOString()
+      }));
+    }
+  } catch (err) {
+    console.warn('Error fetching refunds from Supabase:', err);
+  }
+  return [];
+}
+
+/**
+ * Update Transaction Status (mis. COMPLETED -> REFUNDED)
+ */
+export async function updateTransactionStatus(txId: string, status: string): Promise<boolean> {
+  if (!supabaseClient) return false;
+  try {
+    const { error } = await supabaseClient.from('transactions').update({ status }).eq('id', txId);
+    if (error) {
+      console.warn('Supabase transaction status update warning:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('Cloud update error for transaction status:', err);
+    return false;
+  }
+}
+
+/**
+ * Restock Shelf (shelf_stock) dari item yang dikembalikan.
+ * Model stok: return menambah stok etalase (rak); stok gudang (stock) tidak berubah.
+ */
+export async function restockShelfOnRefund(items: { productId: string; quantity: number }[]): Promise<boolean> {
+  if (!supabaseClient || !items || items.length === 0) return false;
+  let ok = true;
+  for (const item of items) {
+    if (!item.productId || !item.quantity) continue;
+    try {
+      const { data: dbProd } = await supabaseClient
+        .from('products')
+        .select('id, shelf_stock')
+        .eq('id', item.productId)
+        .maybeSingle();
+
+      const prodId = dbProd?.id || item.productId;
+      const currentShelf = dbProd && dbProd.shelf_stock !== null && dbProd.shelf_stock !== undefined
+        ? Number(dbProd.shelf_stock)
+        : 0;
+
+      const newShelf = currentShelf + Number(item.quantity);
+      const { error } = await supabaseClient
+        .from('products')
+        .update({ shelf_stock: newShelf, updated_at: new Date().toISOString() })
+        .eq('id', prodId);
+
+      if (error) {
+        console.warn(`Failed to restock shelf for ${item.productId}:`, error.message);
+        ok = false;
+      }
+    } catch (e) {
+      console.warn(`Restock shelf exception for ${item.productId}:`, e);
+      ok = false;
+    }
+  }
+  return ok;
 }
 
 /**
@@ -1018,7 +1134,7 @@ export async function fetchTransactionsFromCloud(branchId?: string): Promise<Tra
         grandTotal: Number(d.grand_total || 0),
         payAmount: Number(d.paid_amount || 0),
         changeAmount: Number(d.change_amount || 0),
-        status: 'COMPLETED',
+        status: d.status || 'COMPLETED',
         isSynced: true,
         createdAt: d.created_at || new Date().toISOString(),
         items: d.transaction_items?.map((ti: any) => ({

@@ -20,11 +20,11 @@ import {
   X,
   Check
 } from 'lucide-react';
-import { Product, Transaction, Shift, UserRole, SalesTarget, CashMovement } from '../../types';
+import { Product, Transaction, Shift, UserRole, SalesTarget, CashMovement, Refund } from '../../types';
 import { formatCurrency, formatDate, isSameLocalDay, isSameLocalMonth } from '../../utils/formatters';
 import { ReceiptModal } from '../pos/ReceiptModal';
 import { getSalesTargets, saveSalesTarget, logAudit } from '../../services/api';
-import { fetchProductsFromDatabase, fetchTransactionsFromCloud, fetchCashMovementsFromCloud, syncCashMovementToCloud } from '../../services/supabase';
+import { fetchProductsFromDatabase, fetchTransactionsFromCloud, fetchCashMovementsFromCloud, syncCashMovementToCloud, fetchRefundsFromCloud } from '../../services/supabase';
 
 interface DashboardOverviewProps {
   userRole: UserRole;
@@ -48,6 +48,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const [todayTransactions, setTodayTransactions] = useState<Transaction[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
+  const [refunds, setRefunds] = useState<Refund[]>([]);
   const [expenseNote, setExpenseNote] = useState('');
   const [expenseAmount, setExpenseAmount] = useState<string>('');
   const [expenseCategory, setExpenseCategory] = useState('Operasional');
@@ -92,8 +93,18 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           mCogs += (it.product?.purchasePrice || 0) * it.quantity;
         });
       });
-      setMonthlyRevenue(mRev);
-      setMonthlyProfit(mRev - mCogs);
+
+      // Fetch Cash Movements
+      const cms = await fetchCashMovementsFromCloud(activeBranch?.id);
+      setCashMovements(cms);
+
+      // Fetch Refunds (utk koreksi omset)
+      const rf = await fetchRefundsFromCloud(activeBranch?.id);
+      setRefunds(rf);
+      const monthRefund = (rf || []).filter((r) => isSameLocalMonth(r.createdAt, now)).reduce((a, r) => a + r.refundAmount, 0);
+
+      setMonthlyRevenue(Math.max(0, mRev - monthRefund));
+      setMonthlyProfit(Math.max(0, mRev - mCogs - monthRefund));
 
       // Load Sales Target for current branch
       const targets = await getSalesTargets(activeBranch?.id || 'default-branch-001');
@@ -115,10 +126,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
       const sortedRecent = [...allTx].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
       setRecentTransactions(sortedRecent);
-
-      // Fetch Cash Movements
-      const cms = await fetchCashMovementsFromCloud(activeBranch?.id);
-      setCashMovements(cms);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
     }
@@ -137,14 +144,15 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     setIsEditingTarget(false);
   };
 
-  // Metrics calculation
-  const totalRevenueToday = todayTransactions.reduce((acc, t) => acc + t.grandTotal, 0);
+  // Metrics calculation (refund mengurangi omset)
+  const today = new Date();
+  const todayRefundTotal = refunds.filter((r) => isSameLocalDay(r.createdAt, today)).reduce((a, r) => a + r.refundAmount, 0);
+  const totalRevenueToday = todayTransactions.reduce((acc, t) => acc + t.grandTotal, 0) - todayRefundTotal;
   const totalTxCount = todayTransactions.length;
   const avgBasketValue = totalTxCount > 0 ? totalRevenueToday / totalTxCount : 0;
 
   // Stock & Expiry Alerts
   const lowStockProducts = products.filter((p) => p.stock <= p.minStock);
-  const today = new Date();
   const ninetyDaysLater = new Date();
   ninetyDaysLater.setDate(today.getDate() + 90);
 
