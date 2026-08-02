@@ -475,14 +475,7 @@ export function useAppStore() {
       if (openShift) {
         setActiveShift(openShift);
       } else {
-        const saved = localStorage.getItem('minimarket_active_shift_v1');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed && String(parsed.status).toUpperCase() === 'OPEN' && !parsed.endTime) {
-            setActiveShift(parsed);
-            return;
-          }
-        }
+        // Cloud tidak punya shift OPEN → jangan bangkitkan shift lama dari localStorage.
         setActiveShift(null);
       }
     } catch (err) {

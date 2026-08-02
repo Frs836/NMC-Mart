@@ -148,7 +148,9 @@ export async function openShiftServer(cashierId: string, cashierName: string, op
 }
 
 /**
- * Get Active Open Shift directly from Supabase Cloud with Local Fallback
+ * Get Active Open Shift from Supabase Cloud (sumber kebenaran).
+ * Local storage hanya cache; tidak dipakai sebagai fallback agar shift
+ * yang sudah ditutup device lain tidak bangkit kembali.
  */
 export async function getActiveShiftServer(branchId = 'default-branch-001'): Promise<Shift | null> {
   try {
@@ -161,20 +163,14 @@ export async function getActiveShiftServer(branchId = 'default-branch-001'): Pro
       } catch (e) {}
       return openShift;
     }
+
+    // Cloud terjangkau tapi tidak ada shift OPEN → bersihkan rekaman lokal stale.
+    try {
+      localStorage.removeItem('minimarket_active_shift_v1');
+    } catch (e) {}
   } catch (e) {
     console.warn('Error checking active shift from cloud:', e);
   }
-
-  // Fallback to localStorage
-  try {
-    const localActive = localStorage.getItem('minimarket_active_shift_v1');
-    if (localActive) {
-      const parsed = JSON.parse(localActive);
-      if (parsed && String(parsed.status).toUpperCase() === 'OPEN' && !parsed.endTime) {
-        return parsed;
-      }
-    }
-  } catch (e) {}
 
   return null;
 }
