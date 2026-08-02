@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { useStore } from './store/useStore';
 import { LoginPage } from './components/auth/LoginPage';
 import { Header } from './components/layout/Header';
@@ -215,9 +216,11 @@ export function App() {
       
       {/* Global Floating Team Chat FAB for Manager, Owner & Cashier */}
       <FloatingTeamChat currentUser={currentUser} />
+      
+      {/* Vercel Speed Insights */}
+      <SpeedInsights />
     </div>
   );
 }
 
 export default App;
-
