@@ -8,7 +8,7 @@ import { StockOpnameModal } from './StockOpnameModal';
 import { StockPurchaseModal } from './StockPurchaseModal';
 import { PurchaseOrderModal } from './PurchaseOrderModal';
 import { VariantBundleManager } from './VariantBundleManager';
-import { RakitBundleModal } from './RakitBundleModal';
+import { CreateBundleModal } from './CreateBundleModal';
 
 interface ProductListProps {
   userRole: UserRole;
@@ -26,7 +26,7 @@ export const ProductList: React.FC<ProductListProps> = ({ userRole, activeBranch
   const [isProductFormOpen, setIsProductFormOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [variantBundleTarget, setVariantBundleTarget] = useState<Product | null>(null);
-  const [isRakitOpen, setIsRakitOpen] = useState(false);
+  const [isCreateBundleOpen, setIsCreateBundleOpen] = useState(false);
 
   const [isStockOpnameOpen, setIsStockOpnameOpen] = useState(false);
   const [isStockPurchaseOpen, setIsStockPurchaseOpen] = useState(false);
@@ -173,11 +173,11 @@ export const ProductList: React.FC<ProductListProps> = ({ userRole, activeBranch
               <span>PO Supplier</span>
             </button>
             <button
-              onClick={() => setIsRakitOpen(true)}
-              className="flex-1 md:flex-initial bg-[#eef2f6] text-slate-700 px-3.5 py-2.5 rounded-2xl text-xs font-extrabold shadow-[4px_4px_8px_#cbd2d9,-4px_-4px_8px_#ffffff] active:shadow-[inset_2px_2px_4px_#cbd2d9] transition-all flex items-center justify-center gap-1.5"
+              onClick={() => setIsCreateBundleOpen(true)}
+              className="flex-1 md:flex-initial bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2.5 rounded-2xl text-xs font-black shadow-[4px_4px_10px_rgba(79,70,229,0.3)] active:shadow-[inset_2px_2px_4px_rgba(0,0,0,0.2)] transition-all flex items-center justify-center gap-1.5"
             >
-              <PackagePlus className="w-4 h-4 text-emerald-600" />
-              <span>Rakit Paket</span>
+              <PackagePlus className="w-4 h-4" />
+              <span>Buat Bundling</span>
             </button>
             <button
               onClick={() => setIsStockPurchaseOpen(true)}
@@ -558,22 +558,22 @@ export const ProductList: React.FC<ProductListProps> = ({ userRole, activeBranch
         onStockUpdated={loadProducts}
       />
 
-      {/* Kelola Varian & Paket */}
+      {/* Kelola Varian */}
       {variantBundleTarget && (
         <VariantBundleManager
           product={variantBundleTarget}
-          allProducts={products}
           onClose={() => setVariantBundleTarget(null)}
           onDone={loadProducts}
         />
       )}
 
-      {/* Rakit Paket / Bundle */}
-      {isRakitOpen && (
-        <RakitBundleModal
+      {/* Buat Bundling / Paket */}
+      {isCreateBundleOpen && (
+        <CreateBundleModal
           products={products}
+          activeBranch={activeBranch}
           currentUser={currentUser}
-          onClose={() => setIsRakitOpen(false)}
+          onClose={() => setIsCreateBundleOpen(false)}
           onDone={loadProducts}
         />
       )}

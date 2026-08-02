@@ -725,6 +725,11 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
                     <div>
                       <div className="flex items-center justify-between gap-1 mb-1">
                         <span className="text-[10px] text-slate-500 font-bold uppercase truncate">{p.category}</span>
+                        {p.isBundle && (
+                          <span className="text-[9px] bg-indigo-100 text-indigo-800 font-black px-1.5 py-0.5 rounded-md uppercase">
+                            BUNDLING
+                          </span>
+                        )}
                         {isShelfEmpty ? (
                           <span className="text-[9px] bg-rose-100 text-rose-800 font-black px-1.5 py-0.5 rounded-md shadow-[inset_1px_1px_2px_#cbd2d9]" title="Barang habis di rak etalase kasir. Lakukan Restock dari Gudang agar dapat ditransaksikan.">
                             RAK HABIS
