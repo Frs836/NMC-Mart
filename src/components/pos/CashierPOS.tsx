@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Search,
   Barcode,
@@ -20,7 +20,8 @@ import {
   Eye,
   Layers,
   MessageSquare,
-  ClipboardCheck
+  ClipboardCheck,
+  Loader2
 } from 'lucide-react';
 import { Product, Customer, Promotion, PaymentMethod, Transaction, HeldCart } from '../../types';
 import { formatCurrency, formatDate, generateUUID } from '../../utils/formatters';
@@ -103,6 +104,8 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
 
   // Payment Modal State
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const isProcessingRef = useRef(false); // guard sinkron anti double-click
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
   const [payAmount, setPayAmount] = useState<number>(0);
   const [customerNameInput, setCustomerNameInput] = useState('');
@@ -221,53 +224,65 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
   };
 
   const handleCompleteTransaction = async () => {
+    // Anti double-click: guard ref sinkron — klik kedua langsung diabaikan
+    if (isProcessingRef.current) return;
     if (paymentMethod === 'CASH' && payAmount < cartGrandTotal) {
       alert('Jumlah pembayaran tunai kurang dari total belanja!');
       return;
     }
 
-    const changeAmount = paymentMethod === 'CASH' ? payAmount - cartGrandTotal : 0;
-    const txUuid = generateUUID();
+    isProcessingRef.current = true;
+    setIsProcessing(true);
+    try {
+      const changeAmount = paymentMethod === 'CASH' ? payAmount - cartGrandTotal : 0;
+      const txUuid = generateUUID();
 
-    const newTx: Transaction = {
-      id: `tx-${Date.now()}`,
-      txUuid,
-      branchId: activeBranch.id,
-      shiftId: activeShift?.id || 'shift-offline',
-      cashierId: currentUser.id,
-      cashierName: currentUser.name,
-      items: [...cartItems],
-      subtotal: cartSubtotal,
-      taxTotal: 0,
-      discountTotal: cartItemDiscounts + promoDiscount,
-      grandTotal: cartGrandTotal,
-      payAmount: paymentMethod === 'CASH' ? payAmount : cartGrandTotal,
-      changeAmount,
-      paymentMethod,
-      customerName: customerNameInput || selectedCustomer?.name || 'Pelanggan Umum',
-      customerPhone: customerPhoneInput || selectedCustomer?.whatsapp || '',
-      status: 'COMPLETED',
-      isSynced: false,
-      createdAt: new Date().toISOString()
-    };
+      const newTx: Transaction = {
+        id: `tx-${Date.now()}`,
+        txUuid,
+        branchId: activeBranch.id,
+        shiftId: activeShift?.id || 'shift-offline',
+        cashierId: currentUser.id,
+        cashierName: currentUser.name,
+        items: [...cartItems],
+        subtotal: cartSubtotal,
+        taxTotal: 0,
+        discountTotal: cartItemDiscounts + promoDiscount,
+        grandTotal: cartGrandTotal,
+        payAmount: paymentMethod === 'CASH' ? payAmount : cartGrandTotal,
+        changeAmount,
+        paymentMethod,
+        customerName: customerNameInput || selectedCustomer?.name || 'Pelanggan Umum',
+        customerPhone: customerPhoneInput || selectedCustomer?.whatsapp || '',
+        status: 'COMPLETED',
+        isSynced: false,
+        createdAt: new Date().toISOString()
+      };
 
-    await processCompletedTransaction(newTx);
-    await logAudit(
-      'TRANSAKSI_KASIR',
-      'POS',
-      `Transaksi selesai ${txUuid.slice(0, 8)} Total: ${formatCurrency(cartGrandTotal)} (${paymentMethod})`,
-      currentUser.name,
-      currentUser.id
-    );
+      await processCompletedTransaction(newTx);
+      await logAudit(
+        'TRANSAKSI_KASIR',
+        'POS',
+        `Transaksi selesai ${txUuid.slice(0, 8)} Total: ${formatCurrency(cartGrandTotal)} (${paymentMethod})`,
+        currentUser.name,
+        currentUser.id
+      );
 
-    loadProducts();
-    loadShiftTransactions();
-    setCompletedTx(newTx);
-    setIsPaymentModalOpen(false);
-    setIsReceiptModalOpen(true);
-    clearCart();
-    setCustomerNameInput('');
-    setCustomerPhoneInput('');
+      loadProducts();
+      loadShiftTransactions();
+      setCompletedTx(newTx);
+      setIsPaymentModalOpen(false);
+      setIsReceiptModalOpen(true);
+      clearCart();
+      setCustomerNameInput('');
+      setCustomerPhoneInput('');
+    } catch (err) {
+      console.error('Gagal memproses transaksi:', err);
+      alert('Transaksi gagal diproses. Stok tidak berkurang. Silakan coba lagi.');
+    } finally {
+      isProcessingRef.current = false;
+      setIsProcessing(false);
+    }
   };
 
   // ===== Shared Cart Body (dipakai panel lg + drawer mobile) =====
@@ -1056,18 +1071,35 @@ export const CashierPOS: React.FC<CashierPOSProps> = ({
             )}
 
             <div className="flex gap-3 pt-2">
+              {isProcessing && (
+                <div className="w-full bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold rounded-2xl p-3 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                  <span>Memproses transaksi & stok keluar… Jangan tutup jendela / jangan klik ulang.</span>
+                </div>
+              )}
               <button
                 onClick={() => setIsPaymentModalOpen(false)}
-                className="flex-1 py-3 bg-[#eef2f6] text-slate-700 font-bold rounded-2xl text-xs shadow-[4px_4px_8px_#cbd2d9,-4px_-4px_8px_#ffffff]"
+                disabled={isProcessing}
+                className="flex-1 py-3 bg-[#eef2f6] text-slate-700 font-bold rounded-2xl text-xs shadow-[4px_4px_8px_#cbd2d9,-4px_-4px_8px_#ffffff] disabled:opacity-50"
               >
                 Batal
               </button>
               <button
                 onClick={handleCompleteTransaction}
-                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl text-xs flex items-center justify-center gap-2 shadow-[4px_4px_10px_rgba(16,185,129,0.3)]"
+                disabled={isProcessing}
+                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-2xl text-xs flex items-center justify-center gap-2 shadow-[4px_4px_10px_rgba(16,185,129,0.3)] disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <CheckCircle className="w-4 h-4" />
-                <span>KONFIRMASI TRANSAKSI</span>
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>MEMPROSES…</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    <span>KONFIRMASI TRANSAKSI</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
