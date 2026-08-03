@@ -3,13 +3,15 @@ import { BarChart3, Award, AlertTriangle, Printer, Download, Database, Calendar,
 import { Transaction, Product, UserRole, CashMovement, Shift, Refund } from '../../types';
 import { formatCurrency, formatDate, toLocalDateKey } from '../../utils/formatters';
 import { fetchCashMovementsFromCloud, fetchTransactionsFromCloud, fetchShiftsFromCloud, fetchProductsFromDatabase, fetchRefundsFromCloud } from '../../services/supabase';
+import { generateReportPdf } from '../../services/reportPdf';
 
 interface ReportsDashboardProps {
   userRole?: UserRole;
   activeBranch?: any;
+  currentUser?: any;
 }
 
-export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = 'MANAGER', activeBranch }) => {
+export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = 'MANAGER', activeBranch, currentUser }) => {
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const [cashMovements, setCashMovements] = useState<CashMovement[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -238,8 +240,77 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
 
   const lowStockItems = products.filter((p) => p.stock <= p.minStock);
 
-  const handlePrintOrPDF = () => {
-    window.print();
+  const handlePrintOrPDF = async () => {
+    try {
+      // Label periode / shift
+      let filterLabel = '';
+      if (filterMode === 'SHIFT') {
+        filterLabel = selectedShiftId === 'ALL' ? 'Semua Shift Kasir' : `Shift ${activeOrSelectedShift?.cashierName || ''} (${selectedShiftId.slice(-6)})`;
+      } else if (timeframe === 'HARI_INI') filterLabel = 'Hari Ini';
+      else if (timeframe === 'MINGGU_INI') filterLabel = '7 Hari Terakhir';
+      else if (timeframe === 'BULAN_INI') filterLabel = 'Bulan Ini';
+      else filterLabel = `${startDate} s/d ${endDate}`;
+
+      const expiring = products.filter((p) => {
+        if (!p.expiryDate) return false;
+        return (new Date(p.expiryDate).getTime() - Date.now()) / (1000 * 3600 * 24) <= 90;
+      });
+
+      const availableCash = cashSalesTotal + totalCashIn - totalExpenses - totalOwnerDraw;
+      const isShiftSelected = filterMode === 'SHIFT' && selectedShiftId !== 'ALL' && !!activeOrSelectedShift;
+
+      await generateReportPdf({
+        store: {
+          name: activeBranch?.name || localStorage.getItem('minimarket_store_name_v1') || 'Toko',
+          address: activeBranch?.address || '',
+          phone: activeBranch?.phone || '',
+          logoUrl: activeBranch?.logoUrl || localStorage.getItem('minimarket_store_logo_v1') || ''
+        },
+        filterLabel,
+        generatedAt: new Date().toISOString(),
+        operatorName: currentUser?.name || 'Operator',
+        summary: {
+          revenue: totalRevenue,
+          cashSales: cashSalesTotal,
+          nonCashSales: nonCashSalesTotal,
+          grossProfit: totalGrossProfit,
+          expenses: totalExpenses,
+          ownerDraw: totalOwnerDraw,
+          netProfit: netOperationalProfit,
+          txCount: totalTransactionsCount,
+          itemsSoldQty: totalItemsSoldQty,
+          availableCash,
+          shiftLabel: isShiftSelected ? `${activeOrSelectedShift.cashierName} (${selectedShiftId.slice(-6)})` : undefined,
+          shiftExpectedCash: isShiftSelected
+            ? Number(activeOrSelectedShift.openingCash || 0) + availableCash
+            : undefined
+        },
+        items: itemizedSalesList.map((i) => ({
+          barcode: i.barcode,
+          name: i.name,
+          category: i.category,
+          qty: i.qty,
+          revenue: i.revenue,
+          cost: i.cost,
+          margin: i.margin
+        })),
+        movements: filteredCashMovements.map((m) => ({
+          createdAt: m.createdAt,
+          type: m.type,
+          category: m.category,
+          description: m.description,
+          createdBy: m.createdBy,
+          amount: m.amount
+        })),
+        stockWarnings: [
+          ...lowStockItems.map((p) => ({ name: p.name, stock: p.stock, minStock: p.minStock, status: 'LOW' as const })),
+          ...expiring.map((p) => ({ name: p.name, stock: p.stock, minStock: p.minStock, status: 'EXPIRED' as const }))
+        ]
+      });
+    } catch (e) {
+      console.error('PDF generation error:', e);
+      alert('Gagal membuat PDF laporan. Coba lagi.');
+    }
   };
 
   // Detailed CSV Export Function

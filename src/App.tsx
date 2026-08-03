@@ -167,7 +167,7 @@ export function App() {
           <CashflowManager userRole={currentUser.role} currentUser={currentUser} activeBranch={activeBranch} activeShift={activeShift} />
         )}
 
-        {activeTab === 'reports' && <ReportsDashboard userRole={currentUser.role} activeBranch={activeBranch} />}
+        {activeTab === 'reports' && <ReportsDashboard userRole={currentUser.role} activeBranch={activeBranch} currentUser={currentUser} />}
 
         {activeTab === 'audit' && <AuditLogViewer />}
 
