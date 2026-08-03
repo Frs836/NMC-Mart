@@ -27,6 +27,7 @@ export const CloseShiftModal: React.FC<CloseShiftModalProps> = ({
   const [nonCashSales, setNonCashSales] = useState(0);
   const [totalExpenses, setTotalExpenses] = useState(0);
   const [totalCashIn, setTotalCashIn] = useState(0);
+  const [ownerDraw, setOwnerDraw] = useState(0);
   const [expectedCash, setExpectedCash] = useState(activeShift?.openingCash || 0);
 
   useEffect(() => {
@@ -40,6 +41,7 @@ export const CloseShiftModal: React.FC<CloseShiftModalProps> = ({
         setNonCashSales(breakdown.nonCashSales);
         setTotalExpenses(breakdown.totalExpenses);
         setTotalCashIn(breakdown.totalCashIn);
+        setOwnerDraw(breakdown.ownerDraw);
         setExpectedCash(breakdown.expectedCash);
         setActualClosingCash(breakdown.expectedCash);
       } catch (err) {
@@ -179,6 +181,12 @@ export const CloseShiftModal: React.FC<CloseShiftModalProps> = ({
                 <div className="flex justify-between text-slate-300">
                   <span className="flex items-center gap-1"><ArrowDownRight className="w-3.5 h-3.5 text-rose-400" /> Pengeluaran Kas (Kas Out):</span>
                   <span className="font-bold text-rose-400">-{formatCurrency(totalExpenses)}</span>
+                </div>
+              )}
+              {ownerDraw > 0 && (
+                <div className="flex justify-between text-slate-300">
+                  <span className="flex items-center gap-1"><Wallet className="w-3.5 h-3.5 text-amber-400" /> Penarikan Owner:</span>
+                  <span className="font-bold text-amber-400">-{formatCurrency(ownerDraw)}</span>
                 </div>
               )}
             </div>

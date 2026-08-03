@@ -4,14 +4,16 @@ import { CashMovement, UserRole } from '../../types';
 import { formatCurrency, formatDate, toLocalDateKey } from '../../utils/formatters';
 import { logAudit } from '../../services/api';
 import { syncCashMovementToCloud, deleteCashMovementFromCloud, fetchCashMovementsFromCloud, fetchShiftsFromCloud } from '../../services/supabase';
+import { OwnerWithdrawModal } from './OwnerWithdrawModal';
 
 interface CashflowManagerProps {
   userRole: UserRole;
   currentUser: any;
   activeBranch: any;
+  activeShift?: any;
 }
 
-export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, currentUser, activeBranch }) => {
+export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, currentUser, activeBranch, activeShift }) => {
   const [movements, setMovements] = useState<CashMovement[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -26,6 +28,7 @@ export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, curr
 
   // Modals state
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
+  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false);
   const [editingMovement, setEditingMovement] = useState<CashMovement | null>(null);
   const [deletingMovement, setDeletingMovement] = useState<CashMovement | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -239,7 +242,8 @@ export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, curr
 
   const totalCashIn = filteredMovements.filter((m) => m.type === 'CASH_IN').reduce((acc, m) => acc + m.amount, 0);
   const totalExpenses = filteredMovements.filter((m) => m.type === 'EXPENSE_OUT').reduce((acc, m) => acc + m.amount, 0);
-  const netCashflow = totalCashIn - totalExpenses;
+  const totalOwnerDraw = filteredMovements.filter((m) => m.type === 'OWNER_DRAW').reduce((acc, m) => acc + m.amount, 0);
+  const netCashflow = totalCashIn - totalExpenses - totalOwnerDraw;
 
   return (
     <div className="max-w-7xl mx-auto p-3 sm:p-6 space-y-5 pb-24 md:pb-6 text-slate-800">
@@ -267,13 +271,24 @@ export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, curr
             <p className="text-xs text-slate-500 font-medium">Pencatatan CRUD Kas Masuk (In), Pengeluaran (Out), dan Audit Keuangan Terintegrasi.</p>
           </div>
 
-          <button
-            onClick={handleOpenAddModal}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold px-4 py-2.5 rounded-2xl text-xs flex items-center gap-1.5 shadow-[4px_4px_10px_rgba(16,185,129,0.3)] transition-all shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Catat Transaksi Kas Baru</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {userRole === 'OWNER' && (
+              <button
+                onClick={() => setIsWithdrawOpen(true)}
+                className="bg-amber-600 hover:bg-amber-500 text-white font-extrabold px-4 py-2.5 rounded-2xl text-xs flex items-center gap-1.5 shadow-[4px_4px_10px_rgba(217,119,6,0.3)] transition-all"
+              >
+                <Wallet className="w-4 h-4" />
+                <span>Tarik Hasil Owner</span>
+              </button>
+            )}
+            <button
+              onClick={handleOpenAddModal}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold px-4 py-2.5 rounded-2xl text-xs flex items-center gap-1.5 shadow-[4px_4px_10px_rgba(16,185,129,0.3)] transition-all shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Catat Transaksi Kas Baru</span>
+            </button>
+          </div>
         </div>
 
         {/* Timeframe Filter Controls */}
@@ -327,7 +342,7 @@ export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, curr
       </div>
 
       {/* Finance Overview Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         <div className="bg-[#eef2f6] p-5 rounded-3xl shadow-[6px_6px_12px_#cbd2d9,-6px_-6px_12px_#ffffff] border border-white/60 flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-slate-500">Kas Masuk (In Deposit)</span>
@@ -347,6 +362,17 @@ export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, curr
           </div>
           <div className="p-3 rounded-2xl bg-[#eef2f6] shadow-[inset_2px_2px_4px_#cbd2d9] text-rose-600">
             <ArrowUpRight className="w-6 h-6" />
+          </div>
+        </div>
+
+        <div className="bg-[#eef2f6] p-5 rounded-3xl shadow-[6px_6px_12px_#cbd2d9,-6px_-6px_12px_#ffffff] border border-white/60 flex items-center justify-between">
+          <div>
+            <span className="text-xs font-bold text-slate-500">Penarikan Owner</span>
+            <div className="text-xl sm:text-2xl font-black text-amber-600 mt-1">{formatCurrency(totalOwnerDraw)}</div>
+            <span className="text-[10px] text-amber-700 font-semibold block mt-0.5">{filteredMovements.filter(m => m.type === 'OWNER_DRAW').length} Transaksi</span>
+          </div>
+          <div className="p-3 rounded-2xl bg-[#eef2f6] shadow-[inset_2px_2px_4px_#cbd2d9] text-amber-600">
+            <Wallet className="w-6 h-6" />
           </div>
         </div>
 
@@ -415,16 +441,20 @@ export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, curr
                     <td className="p-3.5">
                       <span
                         className={`px-2.5 py-1 rounded-xl text-[10px] font-extrabold shadow-[inset_1px_1px_2px_#cbd2d9] ${
-                          m.type === 'CASH_IN' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                          m.type === 'CASH_IN'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : m.type === 'OWNER_DRAW'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-rose-100 text-rose-800'
                         }`}
                       >
-                        {m.type === 'CASH_IN' ? 'Kas Masuk (In)' : 'Pengeluaran (Out)'}
+                        {m.type === 'CASH_IN' ? 'Kas Masuk (In)' : m.type === 'OWNER_DRAW' ? 'Penarikan Owner' : 'Pengeluaran (Out)'}
                       </span>
                     </td>
                     <td className="p-3.5 font-extrabold text-slate-800">{m.category}</td>
                     <td className="p-3.5 text-slate-600 font-medium">{m.description || '-'}</td>
                     <td className="p-3.5 text-slate-600 font-bold">{m.createdBy}</td>
-                    <td className={`p-3.5 text-right font-black text-sm ${m.type === 'CASH_IN' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                    <td className={`p-3.5 text-right font-black text-sm ${m.type === 'CASH_IN' ? 'text-emerald-700' : m.type === 'OWNER_DRAW' ? 'text-amber-600' : 'text-rose-600'}`}>
                       {m.type === 'CASH_IN' ? '+' : '-'}{formatCurrency(m.amount)}
                     </td>
                     <td className="p-3.5 text-center">
@@ -717,6 +747,17 @@ export const CashflowManager: React.FC<CashflowManagerProps> = ({ userRole, curr
             </div>
           </div>
         </div>
+      )}
+
+      {/* Tarik Hasil Owner */}
+      {isWithdrawOpen && (
+        <OwnerWithdrawModal
+          currentUser={currentUser}
+          activeBranch={activeBranch}
+          activeShift={activeShift}
+          onClose={() => setIsWithdrawOpen(false)}
+          onDone={loadMovements}
+        />
       )}
     </div>
   );

@@ -220,7 +220,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
   const itemizedSalesList = Object.values(itemSalesMap).sort((a, b) => b.qty - a.qty);
   const topSellingList = itemizedSalesList.slice(0, 5);
 
-  // Cash Movements Calculations (In vs Out)
+  // Cash Movements Calculations (In vs Out vs Penarikan Owner)
   const totalCashIn = filteredCashMovements
     .filter((c) => c.type === 'CASH_IN')
     .reduce((acc, c) => acc + (c.amount || 0), 0);
@@ -229,8 +229,12 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
     .filter((c) => c.type === 'EXPENSE_OUT')
     .reduce((acc, c) => acc + (c.amount || 0), 0);
 
-  // Net Operational Profit = Sales Gross Profit + Cash In - Expenses Out
-  const netOperationalProfit = totalGrossProfit + totalCashIn - totalExpenses;
+  const totalOwnerDraw = filteredCashMovements
+    .filter((c) => c.type === 'OWNER_DRAW')
+    .reduce((acc, c) => acc + (c.amount || 0), 0);
+
+  // Laba bersih operasional = laba kotor - beban (setoran/penarikan owner TIDAK mempengaruhi laba)
+  const netOperationalProfit = totalGrossProfit - totalExpenses;
 
   const lowStockItems = products.filter((p) => p.stock <= p.minStock);
 
@@ -276,7 +280,8 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
       csv += `Total Penjualan Tunai Shift,${cashSalesTotal}\n`;
       csv += `Total Kas Masuk (Deposit),${totalCashIn}\n`;
       csv += `Total Pengeluaran Kas (Out),${totalExpenses}\n`;
-      csv += `Ekspektasi Kas Laci Register,${activeOrSelectedShift.openingCash + cashSalesTotal + totalCashIn - totalExpenses}\n`;
+      csv += `Total Penarikan Owner,${totalOwnerDraw}\n`;
+      csv += `Ekspektasi Kas Laci Register,${activeOrSelectedShift.openingCash + cashSalesTotal + totalCashIn - totalExpenses - totalOwnerDraw}\n`;
       csv += `Fisik Uang Kas Laci,${activeOrSelectedShift.actualClosingCash ?? '-'}\n`;
       csv += `Selisih Uang Kas Laci,${activeOrSelectedShift.cashDifference ?? '-'}\n\n`;
     }
@@ -290,6 +295,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
     csv += `Total Margin Laba Kotor Penjualan,${totalGrossProfit}\n`;
     csv += `Total Setoran Kas Masuk (In),${totalCashIn}\n`;
     csv += `Total Pengeluaran Operasional (Out),${totalExpenses}\n`;
+    csv += `Total Penarikan Owner,${totalOwnerDraw}\n`;
     csv += `Laba Bersih Operasional Real,${netOperationalProfit}\n`;
     csv += `Total Transaksi Struk,${totalTransactionsCount}\n`;
     csv += `Total Unit Barang Keluar Terjual,${totalItemsSoldQty}\n\n`;
@@ -329,7 +335,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
       csv += '-,Belum Ada Pencatatan Kas,-,-,-,-,-,0\n';
     } else {
       filteredCashMovements.forEach((c) => {
-        csv += `"${c.id}","${c.shiftId || '-'}","${formatDate(c.createdAt)}","${c.type === 'CASH_IN' ? 'Kas Masuk (In)' : 'Pengeluaran (Out)'}","${c.category}","${(c.description || '-').replace(/"/g, '""')}","${c.createdBy}",${c.amount}\n`;
+        csv += `"${c.id}","${c.shiftId || '-'}","${formatDate(c.createdAt)}","${c.type === 'CASH_IN' ? 'Kas Masuk (In)' : c.type === 'OWNER_DRAW' ? 'Penarikan Owner' : 'Pengeluaran (Out)'}","${c.category}","${(c.description || '-').replace(/"/g, '""')}","${c.createdBy}",${c.amount}\n`;
       });
     }
 
@@ -547,9 +553,14 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
             </div>
 
             <div className="bg-[#eef2f6] p-3 rounded-2xl shadow-[inset_2px_2px_4px_#cbd2d9]">
+              <span className="text-[10px] font-bold text-slate-500 block">Penarikan Owner</span>
+              <span className="font-black text-amber-600 text-sm">-{formatCurrency(totalOwnerDraw)}</span>
+            </div>
+
+            <div className="bg-[#eef2f6] p-3 rounded-2xl shadow-[inset_2px_2px_4px_#cbd2d9]">
               <span className="text-[10px] font-bold text-slate-500 block">Ekspektasi Kas Laci</span>
               <span className="font-black text-slate-900 text-sm">
-                {formatCurrency(activeOrSelectedShift.openingCash + cashSalesTotal + totalCashIn - totalExpenses)}
+                {formatCurrency(activeOrSelectedShift.openingCash + cashSalesTotal + totalCashIn - totalExpenses - totalOwnerDraw)}
               </span>
             </div>
 
@@ -593,10 +604,11 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
         </div>
 
         <div className="bg-[#eef2f6] p-5 rounded-3xl shadow-[6px_6px_12px_#cbd2d9,-6px_-6px_12px_#ffffff] border border-white/60">
-          <span className="text-xs font-bold text-slate-500">Total Kas Masuk / Kas Keluar</span>
-          <div className="text-base font-black text-slate-800 mt-1 flex items-center justify-between">
-            <span className="text-emerald-700">+{formatCurrency(totalCashIn)}</span>
-            <span className="text-rose-600">-{formatCurrency(totalExpenses)}</span>
+          <span className="text-xs font-bold text-slate-500">Total Kas Masuk / Kas Keluar / Penarikan</span>
+          <div className="text-sm font-black text-slate-800 mt-1 space-y-0.5">
+            <span className="flex justify-between"><span className="text-emerald-700">Kas Masuk (In)</span><span className="text-emerald-700">+{formatCurrency(totalCashIn)}</span></span>
+            <span className="flex justify-between"><span className="text-rose-600">Pengeluaran (Out)</span><span className="text-rose-600">-{formatCurrency(totalExpenses)}</span></span>
+            <span className="flex justify-between"><span className="text-amber-600">Penarikan Owner</span><span className="text-amber-600">-{formatCurrency(totalOwnerDraw)}</span></span>
           </div>
           <span className="text-[10px] text-slate-500 font-bold mt-1 block">Arus Kas Operasional Toko</span>
         </div>
@@ -606,7 +618,7 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
           <div className={`text-xl sm:text-2xl font-black mt-1 ${netOperationalProfit >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
             {formatCurrency(netOperationalProfit)}
           </div>
-          <span className="text-[10px] text-slate-500 font-bold mt-1 block">Laba Penjualan + Kas In - Kas Out</span>
+          <span className="text-[10px] text-slate-500 font-bold mt-1 block">Laba Kotor dikurangi Beban Operasional</span>
         </div>
       </div>
 
@@ -749,14 +761,14 @@ export const ReportsDashboard: React.FC<ReportsDashboardProps> = ({ userRole = '
                   <tr key={c.id} className="hover:bg-slate-200/40 transition-colors">
                     <td className="p-3 font-bold text-slate-600 text-[11px]">{formatDate(c.createdAt)}</td>
                     <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold ${c.type === 'CASH_IN' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                        {c.type === 'CASH_IN' ? 'Kas Masuk' : 'Pengeluaran'}
+                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold ${c.type === 'CASH_IN' ? 'bg-emerald-100 text-emerald-800' : c.type === 'OWNER_DRAW' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'}`}>
+                        {c.type === 'CASH_IN' ? 'Kas Masuk' : c.type === 'OWNER_DRAW' ? 'Penarikan Owner' : 'Pengeluaran'}
                       </span>
                     </td>
                     <td className="p-3 font-extrabold text-slate-800">{c.category}</td>
                     <td className="p-3 text-slate-600">{c.description || '-'}</td>
                     <td className="p-3 font-bold text-slate-600">{c.createdBy}</td>
-                    <td className={`p-3 text-right font-black ${c.type === 'CASH_IN' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                    <td className={`p-3 text-right font-black ${c.type === 'CASH_IN' ? 'text-emerald-700' : c.type === 'OWNER_DRAW' ? 'text-amber-600' : 'text-rose-600'}`}>
                       {c.type === 'CASH_IN' ? '+' : '-'}{formatCurrency(c.amount)}
                     </td>
                   </tr>

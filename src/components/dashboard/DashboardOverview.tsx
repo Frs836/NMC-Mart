@@ -398,7 +398,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         const todayMovements = cashMovements.filter((m) => isSameLocalDay(m.createdAt, today));
         const totalCashInToday = todayMovements.filter((m) => m.type === 'CASH_IN').reduce((acc, m) => acc + m.amount, 0);
         const totalCashOutToday = todayMovements.filter((m) => m.type === 'EXPENSE_OUT').reduce((acc, m) => acc + m.amount, 0);
-        const netCashflowToday = totalCashInToday - totalCashOutToday;
+        const totalOwnerDrawToday = todayMovements.filter((m) => m.type === 'OWNER_DRAW').reduce((acc, m) => acc + m.amount, 0);
+        const netCashflowToday = totalCashInToday - totalCashOutToday - totalOwnerDrawToday;
 
         return (
           <div className="bg-[#eef2f6] rounded-3xl p-5 sm:p-6 shadow-[8px_8px_16px_#cbd2d9,-8px_-8px_16px_#ffffff] border border-white/60 space-y-4">
@@ -422,7 +423,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-[#eef2f6] p-4 rounded-2xl shadow-[inset_3px_3px_6px_#cbd2d9,inset_-3px_-3px_6px_#ffffff] space-y-1">
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 block">Total Kas Masuk (In)</span>
                 <p className="text-lg font-black text-emerald-800">+{formatCurrency(totalCashInToday)}</p>
@@ -436,11 +437,17 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               </div>
 
               <div className="bg-[#eef2f6] p-4 rounded-2xl shadow-[inset_3px_3px_6px_#cbd2d9,inset_-3px_-3px_6px_#ffffff] space-y-1">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-600 block">Penarikan Owner</span>
+                <p className="text-lg font-black text-amber-700">-{formatCurrency(totalOwnerDrawToday)}</p>
+                <span className="text-[10px] text-slate-500 font-semibold block">{todayMovements.filter(m => m.type === 'OWNER_DRAW').length} Transaksi Penarikan</span>
+              </div>
+
+              <div className="bg-[#eef2f6] p-4 rounded-2xl shadow-[inset_3px_3px_6px_#cbd2d9,inset_-3px_-3px_6px_#ffffff] space-y-1">
                 <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-600 block">Saldo Kas Operasional Bersih</span>
                 <p className={`text-lg font-black ${netCashflowToday >= 0 ? 'text-slate-800' : 'text-rose-600'}`}>
                   {netCashflowToday >= 0 ? '+' : ''}{formatCurrency(netCashflowToday)}
                 </p>
-                <span className="text-[10px] text-slate-500 font-semibold block">Kas In dikurangi Kas Out</span>
+                <span className="text-[10px] text-slate-500 font-semibold block">In dikurangi Out & Penarikan Owner</span>
               </div>
             </div>
           </div>

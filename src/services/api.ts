@@ -265,12 +265,13 @@ export async function getActiveShiftServer(branchId = 'default-branch-001'): Pro
 export async function getShiftFinancialBreakdown(
   shiftId: string,
   openingCash = 0
-): Promise<{ cashSales: number; nonCashSales: number; totalExpenses: number; totalCashIn: number; expectedCash: number }> {
+): Promise<{ cashSales: number; nonCashSales: number; totalExpenses: number; totalCashIn: number; ownerDraw: number; expectedCash: number }> {
   const client = getSupabaseClient();
   let cashSales = 0;
   let nonCashSales = 0;
   let totalCashIn = 0;
   let totalExpenseOut = 0;
+  let totalOwnerDraw = 0;
 
   if (client) {
     try {
@@ -295,12 +296,14 @@ export async function getShiftFinancialBreakdown(
       (cmData || []).forEach((m: any) => {
         if (m.type === 'CASH_IN') totalCashIn += Number(m.amount || 0);
         if (m.type === 'EXPENSE_OUT') totalExpenseOut += Number(m.amount || 0);
+        if (m.type === 'OWNER_DRAW') totalOwnerDraw += Number(m.amount || 0);
       });
     } catch (e) {}
   }
 
-  const expectedCash = Number(openingCash || 0) + cashSales + totalCashIn - totalExpenseOut;
-  return { cashSales, nonCashSales, totalExpenses: totalExpenseOut, totalCashIn, expectedCash };
+  // Kas di laci = kas awal + penjualan tunai + setoran - beban - penarikan owner
+  const expectedCash = Number(openingCash || 0) + cashSales + totalCashIn - totalExpenseOut - totalOwnerDraw;
+  return { cashSales, nonCashSales, totalExpenses: totalExpenseOut, totalCashIn, ownerDraw: totalOwnerDraw, expectedCash };
 }
 
 /**
@@ -328,8 +331,8 @@ export async function closeShiftServer(shiftId: string, actualClosingCash: numbe
   const branchId = shiftData?.branch_id || 'default-branch-001';
   const startTime = shiftData?.start_time || new Date().toISOString();
 
-  const { cashSales, totalCashIn, totalExpenses: totalExpenseOut } = await getShiftFinancialBreakdown(shiftId, openingCash);
-  const expectedClosingCash = openingCash + cashSales + totalCashIn - totalExpenseOut;
+  const { cashSales, totalCashIn, totalExpenses: totalExpenseOut, ownerDraw } = await getShiftFinancialBreakdown(shiftId, openingCash);
+  const expectedClosingCash = openingCash + cashSales + totalCashIn - totalExpenseOut - ownerDraw;
   const cashDifference = actualClosingCash - expectedClosingCash;
 
   const closedShift: Shift = {

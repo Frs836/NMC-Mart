@@ -138,7 +138,7 @@ export interface CashMovement {
   id: string;
   branchId: string;
   shiftId: string;
-  type: 'CASH_IN' | 'EXPENSE_OUT';
+  type: 'CASH_IN' | 'EXPENSE_OUT' | 'OWNER_DRAW';
   amount: number;
   category: string;
   description: string;
