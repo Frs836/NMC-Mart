@@ -985,6 +985,16 @@ export async function fetchProductsFromDatabase(branchId: string): Promise<Produ
           }
         });
 
+        // Urutkan A-Z berdasarkan nama (locale Indonesia, tidak peka kapital/aksen); nama kosong di akhir
+        mapped.sort((a, b) => {
+          const an = (a.name || '').trim();
+          const bn = (b.name || '').trim();
+          if (!an && !bn) return 0;
+          if (!an) return 1;
+          if (!bn) return -1;
+          return an.localeCompare(bn, 'id', { sensitivity: 'base' });
+        });
+
         return mapped;
       }
 
