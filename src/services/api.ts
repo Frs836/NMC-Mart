@@ -122,8 +122,6 @@ export async function processRefund(
     const returnedQty = refundItems.reduce((a, i) => a + i.quantity, 0);
     const isFull = returnedQty >= totalSoldQty;
 
-    await restockShelfOnRefund(refundItems.map((i) => ({ productId: i.productId, quantity: i.quantity })));
-
     const refund: Refund = {
       id: `refund-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       transactionId: tx.id,
@@ -135,28 +133,70 @@ export async function processRefund(
       createdBy: operatorName,
       createdAt: new Date().toISOString()
     };
-    await syncRefundToCloud(refund);
 
-    if (isFull) {
-      await updateTransactionStatus(tx.id, 'REFUNDED');
+    // Refund tunai: uang keluar dari laci kasir (EXPENSE_OUT) -> close-shift benar.
+    // Refund non-tunai (QRIS/Transfer): uang kembali via bank, TIDAK menyentuh kas fisik laci.
+    const cashOut = tx.paymentMethod === 'CASH'
+      ? {
+          id: `cash-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+          branchId: tx.branchId || 'default-branch-001',
+          shiftId: tx.shiftId && tx.shiftId !== 'shift-offline' ? tx.shiftId : null,
+          type: 'EXPENSE_OUT' as const,
+          amount: refundAmount,
+          category: 'REFUND',
+          description: `Refund ${tx.txUuid.slice(0, 8)}${isFull ? ' (full)' : ''}: ${reason.trim()}`,
+          createdBy: operatorName,
+          createdAt: new Date().toISOString()
+        }
+      : null;
+
+    // A1: proses atomik via RPC (restock + refund + status + kas keluar dalam 1 transaksi DB)
+    let atomicDone = false;
+    try {
+      const client = getSupabaseClient();
+      if (client) {
+        const { error: rpcErr } = await client.rpc('process_refund', {
+          payload: {
+            refund: {
+              id: refund.id,
+              transactionId: tx.id,
+              branchId: refund.branchId,
+              items: refundItems,
+              refundAmount,
+              isFull,
+              reason: reason.trim(),
+              createdBy: operatorName,
+              createdAt: refund.createdAt
+            },
+            cash_out: cashOut,
+            set_status: isFull
+          }
+        });
+        if (!rpcErr) {
+          atomicDone = true;
+        } else {
+          console.warn('process_refund RPC failed, falling back to multi-step:', rpcErr.message);
+        }
+      }
+    } catch (e) {
+      console.warn('process_refund RPC exception, falling back to multi-step:', e);
     }
 
-    await syncCashMovementToCloud({
-      id: `cash-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-      branchId: tx.branchId || 'default-branch-001',
-      shiftId: tx.shiftId && tx.shiftId !== 'shift-offline' ? tx.shiftId : null,
-      type: 'EXPENSE_OUT',
-      amount: refundAmount,
-      category: 'REFUND',
-      description: `Refund ${tx.txUuid.slice(0, 8)}${isFull ? ' (full)' : ''}: ${reason.trim()}`,
-      createdBy: operatorName,
-      createdAt: new Date().toISOString()
-    });
+    if (!atomicDone) {
+      await restockShelfOnRefund(refundItems.map((i) => ({ productId: i.productId, quantity: i.quantity })));
+      await syncRefundToCloud(refund);
+      if (isFull) {
+        await updateTransactionStatus(tx.id, 'REFUNDED');
+      }
+      if (cashOut) {
+        await syncCashMovementToCloud(cashOut);
+      }
+    }
 
     await logAudit(
       'RETURN_BARANG',
       'POS',
-      `Refund ${refundAmount.toLocaleString('id-ID')} utk transaksi ${tx.txUuid.slice(0, 8)} (${refundItems.length} item, ${isFull ? 'full' : 'sebagian'}). Alasan: ${reason.trim()}`,
+      `Refund ${refundAmount.toLocaleString('id-ID')} utk transaksi ${tx.txUuid.slice(0, 8)} (${refundItems.length} item, ${isFull ? 'full' : 'sebagian'}, ${tx.paymentMethod || 'CASH'}). Alasan: ${reason.trim()}`,
       operatorName,
       operatorId,
       tx.branchId || 'default-branch-001'

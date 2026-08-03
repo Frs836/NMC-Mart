@@ -333,6 +333,51 @@ export async function syncTransactionToCloud(tx: Transaction): Promise<boolean> 
       }
     }
 
+    // 3b. Proses atomik via RPC (satu transaksi DB): transaksi + items + potong stok.
+    // Jika gagal (mis. FK/RLS), fallback ke jalur multi-step di bawah.
+    try {
+      const { error: rpcErr } = await supabaseClient.rpc('process_sale', {
+        payload: {
+          tx: {
+            id: tx.id,
+            tx_uuid: tx.txUuid,
+            branch_id: tx.branchId || null,
+            shift_id: validShiftId,
+            cashier_name: tx.cashierName || 'Kasir',
+            customer_name: tx.customerName || 'Pelanggan Umum',
+            payment_method: tx.paymentMethod || 'CASH',
+            status: tx.status || 'COMPLETED',
+            subtotal: tx.subtotal || 0,
+            discount: tx.discountTotal || 0,
+            promo_code: (tx as any).promoCode || null,
+            tax: tx.taxTotal || 0,
+            grand_total: tx.grandTotal || 0,
+            paid_amount: tx.payAmount || 0,
+            change_amount: tx.changeAmount || 0,
+            created_at: tx.createdAt || new Date().toISOString()
+          },
+          items: (tx.items || []).map((item, idx) => ({
+            id: `txi-${tx.id}-${idx}`,
+            transaction_id: tx.id,
+            product_id: item.product.id,
+            product_name: item.product.name,
+            barcode: item.product.barcode || '',
+            purchase_price: item.product.purchasePrice || 0,
+            selling_price: item.product.sellingPrice || 0,
+            quantity: item.quantity,
+            subtotal: item.subtotal
+          }))
+        }
+      });
+      if (!rpcErr) {
+        console.log('✓ Sale processed atomically via RPC:', tx.txUuid);
+        return true;
+      }
+      console.warn('process_sale RPC failed, falling back to multi-step:', rpcErr.message);
+    } catch (e) {
+      console.warn('process_sale RPC exception, falling back to multi-step:', e);
+    }
+
     // 4. Insert/Upsert into transactions table
     let txError: any = null;
     const txData = {
@@ -900,6 +945,27 @@ export async function assembleBundle(bundleId: string, qty: number): Promise<{ s
     return { success: false, message: 'Jumlah rakit harus lebih dari 0.' };
   }
   try {
+    // A1: proses atomik via RPC (cek + kurangi komponen + tambah bundle dalam 1 transaksi DB)
+    try {
+      const { error: rpcErr } = await supabaseClient.rpc('assemble_bundle', {
+        payload: { bundle_id: bundleId, qty }
+      });
+      if (!rpcErr) {
+        return { success: true };
+      }
+      const msg = rpcErr.message || '';
+      if (/stok|komponen|jumlah/i.test(msg)) {
+        return { success: false, message: msg };
+      }
+      console.warn('assemble_bundle RPC failed, falling back to multi-step:', msg);
+    } catch (rpcEx: any) {
+      const msg = rpcEx?.message || '';
+      if (/stok|komponen|jumlah/i.test(msg)) {
+        return { success: false, message: msg };
+      }
+      console.warn('assemble_bundle RPC exception, falling back to multi-step:', msg);
+    }
+
     const comps = await fetchBundleComponents(bundleId);
     if (comps.length === 0) {
       return { success: false, message: 'Bundle belum punya komponen. Tambahkan komponen dulu.' };
@@ -1420,23 +1486,26 @@ export async function pullCloudDataToLocal(branchId?: string): Promise<{ success
 
   let count = 0;
   try {
-    // 1. Branches
+    // 1. Branches (tulis hanya jika berubah — hemat tulis localStorage saat polling)
     const cloudBranches = await fetchBranchesFromCloud();
     if (cloudBranches.length > 0) {
-      localStorage.setItem('minimarket_branches_v1', JSON.stringify(cloudBranches));
+      const newBranchesJson = JSON.stringify(cloudBranches);
+      if (localStorage.getItem('minimarket_branches_v1') !== newBranchesJson) {
+        localStorage.setItem('minimarket_branches_v1', newBranchesJson);
+      }
       const activeCloudBranch = cloudBranches[0];
       if (activeCloudBranch) {
-        if (activeCloudBranch.name) {
+        if (activeCloudBranch.name && localStorage.getItem('minimarket_store_name_v1') !== activeCloudBranch.name) {
           localStorage.setItem('minimarket_store_name_v1', activeCloudBranch.name);
         }
-        if (activeCloudBranch.logoUrl) {
+        if (activeCloudBranch.logoUrl && localStorage.getItem('minimarket_store_logo_v1') !== activeCloudBranch.logoUrl) {
           localStorage.setItem('minimarket_store_logo_v1', activeCloudBranch.logoUrl);
         }
       }
       count += cloudBranches.length;
     }
 
-    // 2. Users
+    // 2. Users (tulis hanya jika hasil merge berubah)
     const cloudUsers = await fetchUsersFromCloud();
     if (cloudUsers.length > 0) {
       const savedUsersStr = localStorage.getItem('minimarket_users_v1');
@@ -1445,7 +1514,10 @@ export async function pullCloudDataToLocal(branchId?: string): Promise<{ success
       localUsers.forEach(u => userMap.set(u.id, u));
       cloudUsers.forEach(u => userMap.set(u.id, u));
       const mergedUsers = Array.from(userMap.values());
-      localStorage.setItem('minimarket_users_v1', JSON.stringify(mergedUsers));
+      const newUsersJson = JSON.stringify(mergedUsers);
+      if (savedUsersStr !== newUsersJson) {
+        localStorage.setItem('minimarket_users_v1', newUsersJson);
+      }
       count += cloudUsers.length;
     }
 

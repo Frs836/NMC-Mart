@@ -411,14 +411,14 @@ export function useAppStore() {
     initializeStore();
 
     if (isSupabaseConfigured()) {
-      // Background poll branch profile & cloud shifts every 5 seconds to ensure instant multi-device alignment
+      // Background poll branch profile & cloud shifts (jaring pengaman; update instan via realtime)
       const pollInterval = setInterval(async () => {
         try {
           await syncBranchProfileFromCloud();
           await pullCloudDataToLocal();
           await checkActiveShift();
         } catch (e) {}
-      }, 5000);
+      }, 10000);
 
       const unsubscribe = subscribeToCloudRealtime(async () => {
         try {
