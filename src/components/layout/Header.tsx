@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sparkles, Wifi, WifiOff, RefreshCw, UserCheck, Store, LogIn, LogOut, Power, Lock, ShieldCheck } from 'lucide-react';
 import { UserRole } from '../../types';
+import { NotificationBell } from '../notifications/NotificationBell';
 
 interface HeaderProps {
   currentUser: { name: string; role: UserRole };
@@ -115,6 +116,9 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden sm:inline">Buka Shift</span>
             </button>
           )}
+
+          {/* Notification Center Bell */}
+          <NotificationBell />
 
           {/* User Profile Badge & Dropdown */}
           <div className="relative">

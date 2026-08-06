@@ -2,6 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ENV_CONFIG, isSupabaseConfigured } from '../config/env';
 import { Product, Transaction, Shift, AuditLog, Branch, User, CashMovement, ShelfStockTransfer, TeamMessage, Refund, BundleComponent } from '../types';
 import { INITIAL_PRODUCTS } from '../db/seed';
+import { createNotification, formatIDR } from './notifications';
 
 let supabaseClient: SupabaseClient | null = null;
 
@@ -690,6 +691,16 @@ export async function syncCashMovementToCloud(m: CashMovement): Promise<boolean>
       }
       return false;
     }
+
+    const type = m.type === 'CASH_IN' ? 'CASH_IN' : m.type === 'OWNER_DRAW' ? 'OWNER_DRAW' : 'CASH_OUT';
+    const title = m.type === 'CASH_IN' ? 'Kas Masuk' : m.type === 'OWNER_DRAW' ? 'Tarik Hasil Owner' : 'Kas Keluar';
+    createNotification({
+      type,
+      title,
+      body: `${formatIDR(m.amount)} · ${m.category || (m.description || 'Kas')} · ${m.createdBy || 'Operator'}`,
+      payload: { cashId: m.id, amount: m.amount, type: m.type }
+    }).catch(() => {});
+
     return true;
   } catch (err) {
     console.warn('Cloud sync error for cash movement:', err);

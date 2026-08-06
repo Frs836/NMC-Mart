@@ -17,6 +17,7 @@ import {
   restockShelfOnRefund,
   syncCashMovementToCloud
 } from './supabase';
+import { createNotification, formatIDR } from './notifications';
 
 export const API_BASE = '/api';
 
@@ -202,6 +203,13 @@ export async function processRefund(
       tx.branchId || 'default-branch-001'
     );
 
+    createNotification({
+      type: 'REFUND',
+      title: 'Refund Transaksi',
+      body: `${isFull ? 'Refund penuh' : 'Refund sebagian'} ${formatIDR(refundAmount)} · ${refundItems.length} item · oleh ${operatorName}`,
+      payload: { transactionId: tx.id, amount: refundAmount, reason: reason.trim() }
+    }).catch(() => {});
+
     return { success: true };
   } catch (err: any) {
     console.error('processRefund error:', err);
@@ -215,6 +223,14 @@ export async function processRefund(
 export async function processCompletedTransaction(tx: Transaction): Promise<{ success: boolean; synced: boolean }> {
   try {
     const supabaseSynced = await syncTransactionToCloud(tx);
+    if (supabaseSynced && tx.status !== 'REFUNDED') {
+      createNotification({
+        type: 'SALE',
+        title: 'Penjualan Sukses',
+        body: `${formatIDR(tx.grandTotal || 0)} · ${(tx.items || []).length} item · ${tx.cashierName || 'Kasir'}`,
+        payload: { transactionId: tx.id, amount: tx.grandTotal || 0, paymentMethod: tx.paymentMethod || 'CASH' }
+      }).catch(() => {});
+    }
     return { success: true, synced: supabaseSynced };
   } catch (err) {
     console.error('Failed to save transaction to cloud:', err);
@@ -651,6 +667,14 @@ export async function createPurchaseOrder(po: Omit<PurchaseOrder, 'id' | 'create
     'user-001',
     newPO.branchId
   );
+
+  createNotification({
+    type: 'PO',
+    title: 'Purchase Order Dibuat',
+    body: `PO #${newPO.poNumber} · ${newPO.supplierName} · ${formatIDR(newPO.totalAmount)}`,
+    payload: { poId: newPO.id, poNumber: newPO.poNumber, amount: newPO.totalAmount }
+  }).catch(() => {});
+
   return newPO;
 }
 
@@ -692,6 +716,16 @@ export async function updatePOStatus(poId: string, status: 'ORDERED' | 'RECEIVED
       'user-001',
       poData.branch_id
     );
+
+    if (status === 'ORDERED' || status === 'RECEIVED') {
+      createNotification({
+        type: 'PO',
+        title: status === 'RECEIVED' ? 'PO Diterima' : 'PO Dipesan',
+        body: `PO #${poData.po_number} · ${status === 'RECEIVED' ? 'barang masuk' : 'dikirim ke supplier'} · ${formatIDR(Number(poData.total_amount || 0))}`,
+        payload: { poId: poId, poNumber: poData.po_number, status }
+      }).catch(() => {});
+    }
+
     return true;
   } catch (err) {
     console.error('updatePOStatus error:', err);

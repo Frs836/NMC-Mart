@@ -14,6 +14,7 @@ import { AuditLogViewer } from './components/audit/AuditLogViewer';
 import { SettingsManager } from './components/settings/SettingsManager';
 import { AIAssistantDrawer } from './components/ai/AIAssistantDrawer';
 import { FloatingTeamChat } from './components/chat/FloatingTeamChat';
+import { NotificationBanner } from './components/notifications/NotificationBanner';
 
 export function App() {
   const {
@@ -217,6 +218,9 @@ export function App() {
       
       {/* Global Floating Team Chat FAB for Manager, Owner & Cashier */}
       <FloatingTeamChat currentUser={currentUser} />
+
+      {/* Global In-App Notification Banner */}
+      <NotificationBanner />
     </div>
   );
 }
